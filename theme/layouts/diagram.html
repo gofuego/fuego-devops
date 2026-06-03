@@ -1,0 +1,344 @@
+{{define "content"}}
+<style>
+    main { max-width: none !important; margin: 0 !important; padding: 0 !important; }
+    #diagram-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1.5rem;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+    }
+    #diagram-header h2 { font-size: 1.1rem; font-weight: 600; }
+    #view-buttons { display: flex; gap: 0.5rem; }
+    #view-buttons button {
+        padding: 0.4rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-family: inherit;
+        transition: all 0.15s;
+    }
+    #view-buttons button:hover { border-color: var(--accent); color: var(--text); }
+    #view-buttons button.active {
+        background: #1f6feb33;
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+    #legend {
+        display: flex;
+        gap: 1rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+    }
+    #graph-canvas {
+        width: 100%;
+        height: calc(100vh - 160px);
+    }
+    #node-tooltip {
+        display: none;
+        position: fixed;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        z-index: 100;
+        pointer-events: none;
+        max-width: 300px;
+    }
+    #node-tooltip .tt-kind { color: var(--accent); font-weight: 600; }
+    #node-tooltip .tt-name { color: var(--text); }
+    #node-tooltip .tt-ns { color: var(--text-muted); font-size: 0.8rem; }
+</style>
+
+<div id="diagram-header">
+    <h2>{{.Page.Envelope.title}}</h2>
+    <div id="view-buttons">
+        <button class="active" data-view="architecture">Architecture</button>
+        <button data-view="traffic">Traffic Flow</button>
+        <button data-view="dependencies">Dependencies</button>
+    </div>
+    <div id="legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Deployment</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>Service</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#d29922"></span>Ingress</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#bc8cff"></span>ConfigMap</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#f85149"></span>Secret</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#8b949e"></span>Dockerfile</span>
+    </div>
+</div>
+<div id="graph-canvas"></div>
+<div id="node-tooltip"></div>
+
+<script>
+(function() {
+    var pageData = {{.JSON}};
+    var graphDataNode = null;
+    for (var i = 0; i < pageData.nodes.length; i++) {
+        if (pageData.nodes[i].type === "graph-data") {
+            graphDataNode = pageData.nodes[i];
+            break;
+        }
+    }
+    if (!graphDataNode) return;
+
+    var graphNodes = graphDataNode.attributes.nodes || [];
+    var graphEdges = graphDataNode.attributes.edges || [];
+
+    // Kind → visual config
+    var kindConfig = {
+        "Deployment":   { color: "#58a6ff", shape: "box" },
+        "StatefulSet":  { color: "#58a6ff", shape: "box" },
+        "DaemonSet":    { color: "#58a6ff", shape: "box" },
+        "Job":          { color: "#58a6ff", shape: "box" },
+        "CronJob":      { color: "#58a6ff", shape: "box" },
+        "Service":      { color: "#3fb950", shape: "ellipse" },
+        "Ingress":      { color: "#d29922", shape: "diamond" },
+        "ConfigMap":    { color: "#bc8cff", shape: "box" },
+        "Secret":       { color: "#f85149", shape: "box" },
+        "Dockerfile":   { color: "#8b949e", shape: "hexagon" },
+        "PersistentVolumeClaim": { color: "#d2a8ff", shape: "box" }
+    };
+
+    var defaultConfig = { color: "#8b949e", shape: "box" };
+
+    // Build vis.js nodes
+    var visNodes = graphNodes.map(function(n) {
+        var cfg = kindConfig[n.kind] || defaultConfig;
+        return {
+            id: n.id,
+            label: n.label,
+            shape: cfg.shape,
+            color: {
+                background: cfg.color + "22",
+                border: cfg.color,
+                highlight: { background: cfg.color + "44", border: cfg.color },
+                hover: { background: cfg.color + "33", border: cfg.color }
+            },
+            font: { color: "#c9d1d9", size: 13 },
+            borderWidth: 2,
+            _kind: n.kind,
+            _namespace: n.namespace || "",
+            _url: n.url
+        };
+    });
+
+    // Edge type → visual config
+    var edgeConfig = {
+        "routes-to": { color: "#d29922", dashes: false },
+        "selects":   { color: "#3fb950", dashes: false },
+        "env-from":  { color: "#bc8cff", dashes: true },
+        "mounts":    { color: "#bc8cff", dashes: [5, 5] },
+        "builds":    { color: "#8b949e", dashes: [10, 5] }
+    };
+
+    var defaultEdgeConfig = { color: "#30363d", dashes: false };
+
+    var visEdges = graphEdges.map(function(e, i) {
+        var cfg = edgeConfig[e.type] || defaultEdgeConfig;
+        return {
+            id: "e" + i,
+            from: e.from,
+            to: e.to,
+            label: e.label || "",
+            arrows: "to",
+            color: { color: cfg.color, highlight: cfg.color, hover: cfg.color },
+            dashes: cfg.dashes,
+            font: { color: "#8b949e", size: 11, strokeWidth: 0 },
+            smooth: { type: "cubicBezier", roundness: 0.4 },
+            _type: e.type
+        };
+    });
+
+    var allNodes = new vis.DataSet(visNodes);
+    var allEdges = new vis.DataSet(visEdges);
+
+    var container = document.getElementById("graph-canvas");
+
+    var baseOptions = {
+        nodes: {
+            margin: { top: 10, bottom: 10, left: 12, right: 12 },
+            shadow: { enabled: true, color: "rgba(0,0,0,0.3)", size: 5 }
+        },
+        edges: {
+            width: 1.5
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 100,
+            navigationButtons: true,
+            keyboard: true
+        },
+        physics: {
+            enabled: true,
+            solver: "forceAtlas2Based",
+            forceAtlas2Based: {
+                gravitationalConstant: -80,
+                centralGravity: 0.01,
+                springLength: 180,
+                springConstant: 0.04,
+                damping: 0.4
+            },
+            stabilization: { iterations: 200 }
+        }
+    };
+
+    var network = new vis.Network(container, { nodes: allNodes, edges: allEdges }, baseOptions);
+
+    // URL map for click navigation
+    var urlMap = {};
+    graphNodes.forEach(function(n) { urlMap[n.id] = n.url; });
+
+    network.on("click", function(params) {
+        if (params.nodes.length > 0) {
+            var url = urlMap[params.nodes[0]];
+            if (url) window.location.href = url;
+        }
+    });
+
+    // Tooltip
+    var tooltip = document.getElementById("node-tooltip");
+    network.on("hoverNode", function(params) {
+        var nodeData = allNodes.get(params.node);
+        if (!nodeData) return;
+        tooltip.innerHTML =
+            '<div class="tt-kind">' + nodeData._kind + '</div>' +
+            '<div class="tt-name">' + nodeData.label + '</div>' +
+            (nodeData._namespace ? '<div class="tt-ns">namespace: ' + nodeData._namespace + '</div>' : '');
+        tooltip.style.display = "block";
+    });
+
+    network.on("blurNode", function() {
+        tooltip.style.display = "none";
+    });
+
+    container.addEventListener("mousemove", function(e) {
+        tooltip.style.left = (e.clientX + 15) + "px";
+        tooltip.style.top = (e.clientY + 15) + "px";
+    });
+
+    // View switching
+    var currentView = "architecture";
+
+    var viewFilters = {
+        architecture: {
+            nodeKinds: null, // all
+            edgeTypes: null  // all
+        },
+        traffic: {
+            nodeKinds: ["Ingress", "Service", "Deployment", "StatefulSet", "DaemonSet"],
+            edgeTypes: ["routes-to", "selects"]
+        },
+        dependencies: {
+            nodeKinds: ["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "ConfigMap", "Secret", "PersistentVolumeClaim", "Dockerfile"],
+            edgeTypes: ["env-from", "mounts", "builds"]
+        }
+    };
+
+    var viewLayouts = {
+        architecture: {
+            physics: {
+                enabled: true,
+                solver: "forceAtlas2Based",
+                forceAtlas2Based: {
+                    gravitationalConstant: -80,
+                    centralGravity: 0.01,
+                    springLength: 180,
+                    springConstant: 0.04,
+                    damping: 0.4
+                },
+                stabilization: { iterations: 200 }
+            },
+            layout: { hierarchical: false }
+        },
+        traffic: {
+            physics: { enabled: false },
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: "LR",
+                    sortMethod: "directed",
+                    levelSeparation: 250,
+                    nodeSpacing: 120
+                }
+            }
+        },
+        dependencies: {
+            physics: { enabled: false },
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: "UD",
+                    sortMethod: "directed",
+                    levelSeparation: 180,
+                    nodeSpacing: 120
+                }
+            }
+        }
+    };
+
+    function switchView(view) {
+        if (view === currentView) return;
+        currentView = view;
+
+        var filter = viewFilters[view];
+        var filteredNodes, filteredEdges;
+
+        if (filter.nodeKinds) {
+            var kindSet = {};
+            filter.nodeKinds.forEach(function(k) { kindSet[k] = true; });
+            filteredNodes = visNodes.filter(function(n) { return kindSet[n._kind]; });
+        } else {
+            filteredNodes = visNodes;
+        }
+
+        var nodeIdSet = {};
+        filteredNodes.forEach(function(n) { nodeIdSet[n.id] = true; });
+
+        if (filter.edgeTypes) {
+            var typeSet = {};
+            filter.edgeTypes.forEach(function(t) { typeSet[t] = true; });
+            filteredEdges = visEdges.filter(function(e) {
+                return typeSet[e._type] && nodeIdSet[e.from] && nodeIdSet[e.to];
+            });
+        } else {
+            filteredEdges = visEdges.filter(function(e) {
+                return nodeIdSet[e.from] && nodeIdSet[e.to];
+            });
+        }
+
+        var opts = viewLayouts[view];
+        network.setOptions(opts);
+        network.setData({
+            nodes: new vis.DataSet(filteredNodes),
+            edges: new vis.DataSet(filteredEdges)
+        });
+
+        // Update active button
+        document.querySelectorAll("#view-buttons button").forEach(function(btn) {
+            btn.classList.toggle("active", btn.getAttribute("data-view") === view);
+        });
+    }
+
+    document.querySelectorAll("#view-buttons button").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            switchView(this.getAttribute("data-view"));
+        });
+    });
+})();
+</script>
+{{end}}

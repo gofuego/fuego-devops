@@ -1,0 +1,5 @@
+{{define "content"}}
+<h1 class="page-title">{{.Page.Envelope.title}}</h1>
+{{if .Page.Envelope.source_path}}<p class="source-path">📂 {{.Page.Envelope.source_path}}</p>{{end}}
+<div>{{.Page.Content}}</div>
+{{end}}

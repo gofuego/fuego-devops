@@ -1,0 +1,7 @@
+<div class="card">
+  <h3>Service</h3>
+  <table class="kv-table">
+    <tr><td>Type</td><td><span class="badge badge-green">{{index .Attributes "serviceType"}}</span></td></tr>
+    {{if index .Attributes "selector"}}<tr><td>Selector</td><td class="mono">{{index .Attributes "selector"}}</td></tr>{{end}}
+  </table>
+</div>

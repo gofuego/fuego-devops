@@ -1,0 +1,9 @@
+<div class="card">
+  <h3>Resource</h3>
+  <table class="kv-table">
+    <tr><td>Kind</td><td><span class="badge badge-blue">{{index .Attributes "kind"}}</span></td></tr>
+    <tr><td>API Version</td><td class="mono">{{index .Attributes "apiVersion"}}</td></tr>
+    <tr><td>Name</td><td class="mono">{{index .Attributes "name"}}</td></tr>
+    {{if index .Attributes "namespace"}}<tr><td>Namespace</td><td><span class="badge badge-purple">{{index .Attributes "namespace"}}</span></td></tr>{{end}}
+  </table>
+</div>

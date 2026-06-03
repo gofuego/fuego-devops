@@ -1,0 +1,7 @@
+<div class="card" style="border-left: 3px solid var(--accent);">
+  <h3>Stage{{if index .Attributes "alias"}} — {{index .Attributes "alias"}}{{end}}</h3>
+  <table class="kv-table">
+    <tr><td>Image</td><td><span class="badge badge-blue">{{index .Attributes "image"}}</span></td></tr>
+    {{if index .Attributes "alias"}}<tr><td>Alias</td><td class="mono">{{index .Attributes "alias"}}</td></tr>{{end}}
+  </table>
+</div>

@@ -1,0 +1,21 @@
+# Compiled binary (root only, not cmd/fuego-devops/)
+/fuego-devops
+
+# Generated at runtime by devops.Run()
+config.yaml
+
+# Build output
+build/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE / OS
+.idea/
+.DS_Store

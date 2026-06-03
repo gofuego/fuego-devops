@@ -1,0 +1,9 @@
+<div class="card">
+  <h3>Ingress Rule</h3>
+  <table class="kv-table">
+    {{if index .Attributes "host"}}<tr><td>Host</td><td class="mono">{{index .Attributes "host"}}</td></tr>{{end}}
+    <tr><td>Path</td><td class="mono">{{index .Attributes "path"}}</td></tr>
+    {{if index .Attributes "pathType"}}<tr><td>Path Type</td><td>{{index .Attributes "pathType"}}</td></tr>{{end}}
+    <tr><td>Service</td><td class="mono">{{index .Attributes "serviceName"}}:{{index .Attributes "servicePort"}}</td></tr>
+  </table>
+</div>

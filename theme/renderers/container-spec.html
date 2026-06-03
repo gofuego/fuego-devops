@@ -1,0 +1,11 @@
+<div class="card">
+  <h3>Container{{if index .Attributes "init"}} (init){{end}}</h3>
+  <table class="kv-table">
+    <tr><td>Name</td><td class="mono">{{index .Attributes "name"}}</td></tr>
+    <tr><td>Image</td><td><span class="badge badge-blue">{{index .Attributes "image"}}</span></td></tr>
+    {{if index .Attributes "ports"}}<tr><td>Ports</td><td class="mono">{{index .Attributes "ports"}}</td></tr>{{end}}
+    {{if index .Attributes "limits"}}<tr><td>Limits</td><td class="mono">{{index .Attributes "limits"}}</td></tr>{{end}}
+    {{if index .Attributes "requests"}}<tr><td>Requests</td><td class="mono">{{index .Attributes "requests"}}</td></tr>{{end}}
+    {{if index .Attributes "envCount"}}<tr><td>Env Vars</td><td>{{index .Attributes "envCount"}}</td></tr>{{end}}
+  </table>
+</div>
