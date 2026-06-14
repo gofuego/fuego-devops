@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/FabioSol/fuego/core"
+	"github.com/gofuego/fuego/core"
 	"gopkg.in/yaml.v3"
 )
 

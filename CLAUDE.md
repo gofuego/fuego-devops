@@ -3,7 +3,7 @@
 ## What is fuego-devops?
 
 fuego-devops is a **domain-specific static site generator for DevOps
-infrastructure**, built on the [Fuego](https://github.com/FabioSol/fuego)
+infrastructure**, built on the [Fuego](https://github.com/gofuego/fuego)
 meta-engine. Point it at a repository; it discovers the Dockerfiles and
 Kubernetes manifests, resolves their relationships, and produces an interactive
 documentation site: a per-namespace infrastructure overview, an architecture
@@ -294,7 +294,7 @@ A consumer can override any file by placing their own `theme/...` over the pack'
 
 | Package | Purpose |
 |---------|---------|
-| `github.com/FabioSol/fuego` | Meta-engine SSG — pipeline, routing, rendering, serving, pack API |
+| `github.com/gofuego/fuego` | Meta-engine SSG — pipeline, routing, rendering, serving, pack API |
 | `gopkg.in/yaml.v3` | YAML parsing (manifests, kustomization files, render-stream splitting) |
 | `kustomize` (binary, external) | Renders Kustomize overlays before scanning |
 | `helm` (binary, external) | Renders Helm charts before scanning |

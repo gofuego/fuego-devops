@@ -3,7 +3,7 @@ package graph
 import (
 	"testing"
 
-	"github.com/FabioSol/fuego/core"
+	"github.com/gofuego/fuego/core"
 )
 
 func makePage(typ, url string, envelope core.Envelope, nodes []core.Node) *core.Page {

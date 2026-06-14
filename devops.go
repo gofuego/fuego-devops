@@ -12,11 +12,11 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/FabioSol/fuego-devops/graph"
-	"github.com/FabioSol/fuego-devops/parser"
-	"github.com/FabioSol/fuego-devops/scanner"
-	"github.com/FabioSol/fuego/core"
-	"github.com/FabioSol/fuego/engine"
+	"github.com/gofuego/fuego-devops/graph"
+	"github.com/gofuego/fuego-devops/parser"
+	"github.com/gofuego/fuego-devops/scanner"
+	"github.com/gofuego/fuego/core"
+	"github.com/gofuego/fuego/engine"
 )
 
 //go:embed all:theme

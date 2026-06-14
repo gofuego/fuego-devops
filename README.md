@@ -1,7 +1,7 @@
 # fuego-devops
 
 A documentation site generator for **DevOps infrastructure**, built on the
-[Fuego](https://github.com/FabioSol/fuego) meta-engine.
+[Fuego](https://github.com/gofuego/fuego) meta-engine.
 
 Point `fuego-devops` at a repository and it discovers the Dockerfiles and
 Kubernetes manifests, resolves how they relate, and produces an interactive
@@ -25,14 +25,14 @@ importable **format pack** (`devops.Pack()`) you can drop into any Fuego project
 ## Install
 
 ```bash
-go install github.com/FabioSol/fuego-devops/cmd/fuego-devops@latest
+go install github.com/gofuego/fuego-devops/cmd/fuego-devops@latest
 ```
 
 Requires Go 1.25+. The binary lands in `$GOPATH/bin` (usually `~/go/bin`); make
 sure that's on your `PATH`. Or run without installing:
 
 ```bash
-go run github.com/FabioSol/fuego-devops/cmd/fuego-devops@latest ./my-infra-repo build
+go run github.com/gofuego/fuego-devops/cmd/fuego-devops@latest ./my-infra-repo build
 ```
 
 For Kustomize and Helm support, install those tools too:
@@ -127,7 +127,7 @@ fuego-devops ./my-infra-repo
 fuego-devops -site-name "Acme Infra" -base-url /infra -output public ./repo build
 
 # In GitHub Actions (no Go code needed)
-go install github.com/FabioSol/fuego-devops/cmd/fuego-devops@latest
+go install github.com/gofuego/fuego-devops/cmd/fuego-devops@latest
 fuego-devops -site-name "My Infra" "$GITHUB_WORKSPACE" build
 ```
 
@@ -149,8 +149,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/FabioSol/fuego-devops"
-	"github.com/FabioSol/fuego/engine"
+	"github.com/gofuego/fuego-devops"
+	"github.com/gofuego/fuego/engine"
 )
 
 func main() {
@@ -171,7 +171,7 @@ func main() {
 To scan a repo *and* build in one call from Go, use the higher-level wrapper:
 
 ```go
-import "github.com/FabioSol/fuego-devops"
+import "github.com/gofuego/fuego-devops"
 
 func main() {
 	err := devops.Run("./my-infra-repo", devops.Options{

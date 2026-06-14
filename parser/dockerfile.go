@@ -3,7 +3,7 @@ package parser
 import (
 	"strings"
 
-	"github.com/FabioSol/fuego/core"
+	"github.com/gofuego/fuego/core"
 )
 
 // Dockerfile returns a parser for Dockerfile files.

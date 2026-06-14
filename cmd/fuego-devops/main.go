@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	devops "github.com/FabioSol/fuego-devops"
+	devops "github.com/gofuego/fuego-devops"
 )
 
 func main() {
