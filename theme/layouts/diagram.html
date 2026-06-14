@@ -1,79 +1,138 @@
 {{define "content"}}
 <style>
     main { max-width: none !important; margin: 0 !important; padding: 0 !important; }
-    #diagram-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.75rem 1.5rem;
+
+    /* ---- structured summary ---- */
+    #summary { padding: 1.5rem; max-width: 80rem; margin: 0 auto; }
+    #summary > h2 { font-size: 1.25rem; margin-bottom: 1rem; }
+    .ns-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); gap: 1rem; }
+    .ns-card {
         background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem 1.1rem;
+    }
+    .ns-name {
+        font-size: 0.95rem; font-weight: 600; color: var(--accent);
+        margin-bottom: 0.75rem; padding-bottom: 0.5rem;
         border-bottom: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: baseline;
+    }
+    .ns-count { font-size: 0.75rem; color: var(--text-muted); font-weight: 400; }
+    .wl { padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+    .wl:last-child { border-bottom: none; }
+    .wl-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
+    .wl-name { font-weight: 600; color: var(--text); text-decoration: none; }
+    .wl-name:hover { color: var(--accent); }
+    .wl-kind { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .wl-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; margin: 0.2rem 0; font-size: 0.82rem; }
+    .wl-label { color: var(--text-muted); min-width: 5.5rem; }
+    .wl-others { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px dashed var(--border); display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; font-size: 0.82rem; }
+    .chip {
+        display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px;
+        font-size: 0.78rem; text-decoration: none; border: 1px solid;
+        background: transparent; color: var(--text-muted); border-color: var(--border);
+    }
+    .chip:hover { filter: brightness(1.3); }
+    .chip-Service { color: #3fb950; border-color: #3fb95066; }
+    .chip-Ingress { color: #d29922; border-color: #d2992266; }
+    .chip-ConfigMap { color: #bc8cff; border-color: #bc8cff66; }
+    .chip-Secret { color: #f85149; border-color: #f8514966; }
+    .chip-PersistentVolumeClaim { color: #d2a8ff; border-color: #d2a8ff66; }
+    .chip-Dockerfile { color: #8b949e; border-color: #8b949e66; }
+
+    /* ---- diagram ---- */
+    #diagram-section { border-top: 1px solid var(--border); position: relative; }
+    #graph-controls {
+        position: absolute; right: 1.1rem; bottom: 1.1rem; z-index: 5;
+        display: flex; flex-direction: column; gap: 0.4rem;
+    }
+    #graph-controls button {
+        width: 2.1rem; height: 2.1rem; border: 1px solid var(--border); border-radius: 7px;
+        background: var(--surface); color: var(--text); font-size: 1.15rem; line-height: 1;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 1px 5px rgba(0,0,0,0.45); transition: all 0.12s;
+    }
+    #graph-controls button:hover { border-color: var(--accent); color: var(--accent); background: #1f6feb22; }
+    #graph-controls button:active { transform: translateY(1px); }
+    #diagram-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.75rem 1.5rem; background: var(--surface);
+        border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 0.5rem;
     }
     #diagram-header h2 { font-size: 1.1rem; font-weight: 600; }
+    .zoom-hint { font-size: 0.72rem; font-weight: 400; color: var(--text-muted); margin-left: 0.5rem; }
     #view-buttons { display: flex; gap: 0.5rem; }
     #view-buttons button {
-        padding: 0.4rem 1rem;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        background: transparent;
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 0.85rem;
-        font-family: inherit;
-        transition: all 0.15s;
+        padding: 0.4rem 1rem; border: 1px solid var(--border); border-radius: 4px;
+        background: transparent; color: var(--text-muted); cursor: pointer;
+        font-size: 0.85rem; font-family: inherit; transition: all 0.15s;
     }
     #view-buttons button:hover { border-color: var(--accent); color: var(--text); }
-    #view-buttons button.active {
-        background: #1f6feb33;
-        border-color: var(--accent);
-        color: var(--accent);
-    }
-    #legend {
-        display: flex;
-        gap: 1rem;
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.35rem;
-    }
-    .legend-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 2px;
-    }
-    #graph-canvas {
-        width: 100%;
-        height: calc(100vh - 160px);
-    }
+    #view-buttons button.active { background: #1f6feb33; border-color: var(--accent); color: var(--accent); }
+    #legend { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text-muted); flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+    #graph-canvas { width: 100%; height: 70vh; min-height: 480px; }
     #node-tooltip {
-        display: none;
-        position: fixed;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 0.75rem 1rem;
-        font-size: 0.85rem;
-        z-index: 100;
-        pointer-events: none;
-        max-width: 300px;
+        display: none; position: fixed; background: var(--surface);
+        border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem;
+        font-size: 0.85rem; z-index: 100; pointer-events: none; max-width: 300px;
     }
     #node-tooltip .tt-kind { color: var(--accent); font-weight: 600; }
     #node-tooltip .tt-name { color: var(--text); }
     #node-tooltip .tt-ns { color: var(--text-muted); font-size: 0.8rem; }
 </style>
 
-<div id="diagram-header">
+<section id="summary">
     <h2>{{.Page.Envelope.title}}</h2>
+    <div class="ns-grid">
+    {{- range .Page.Envelope.summary}}
+        <div class="ns-card">
+            <div class="ns-name">{{.Name}} <span class="ns-count">{{len .Workloads}} workloads</span></div>
+            {{- range .Workloads}}
+            <div class="wl">
+                <div class="wl-head">
+                    <a class="wl-name" href="{{$.Site.BaseURL}}{{.URL}}">{{.Name}}</a>
+                    <span class="wl-kind">{{.Kind}}</span>
+                </div>
+                {{- if .ExposedBy}}
+                <div class="wl-row"><span class="wl-label">exposed by</span>
+                    {{range .ExposedBy}}<a class="chip chip-{{.Kind}}" href="{{$.Site.BaseURL}}{{.URL}}">{{.Name}}</a>{{end}}
+                </div>
+                {{- end}}
+                {{- if .DependsOn}}
+                <div class="wl-row"><span class="wl-label">depends on</span>
+                    {{range .DependsOn}}<a class="chip chip-{{.Kind}}" href="{{$.Site.BaseURL}}{{.URL}}">{{.Name}}</a>{{end}}
+                </div>
+                {{- end}}
+                {{- if .BuiltBy}}
+                <div class="wl-row"><span class="wl-label">built by</span>
+                    {{range .BuiltBy}}<a class="chip chip-Dockerfile" href="{{$.Site.BaseURL}}{{.URL}}">{{.Name}}</a>{{end}}
+                </div>
+                {{- end}}
+            </div>
+            {{- end}}
+            {{- if .Others}}
+            <div class="wl-others"><span class="wl-label">other resources</span>
+                {{range .Others}}<a class="chip chip-{{.Kind}}" href="{{$.Site.BaseURL}}{{.URL}}">{{.Name}}</a>{{end}}
+            </div>
+            {{- end}}
+        </div>
+    {{- end}}
+    </div>
+</section>
+
+<section id="diagram-section">
+<div id="diagram-header">
+    <h2>Architecture Diagram <span class="zoom-hint">scroll to zoom · drag to pan</span></h2>
     <div id="view-buttons">
         <button class="active" data-view="architecture">Architecture</button>
         <button data-view="traffic">Traffic Flow</button>
         <button data-view="dependencies">Dependencies</button>
     </div>
     <div id="legend">
-        <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Deployment</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Workload</span>
         <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>Service</span>
         <span class="legend-item"><span class="legend-dot" style="background:#d29922"></span>Ingress</span>
         <span class="legend-item"><span class="legend-dot" style="background:#bc8cff"></span>ConfigMap</span>
@@ -82,24 +141,26 @@
     </div>
 </div>
 <div id="graph-canvas"></div>
+<div id="graph-controls">
+    <button data-act="in" title="Zoom in" aria-label="Zoom in">+</button>
+    <button data-act="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    <button data-act="fit" title="Fit to view" aria-label="Fit to view">&#9974;</button>
+</div>
 <div id="node-tooltip"></div>
+</section>
 
 <script>
 (function() {
     var pageData = {{.JSON}};
     var graphDataNode = null;
     for (var i = 0; i < pageData.nodes.length; i++) {
-        if (pageData.nodes[i].type === "graph-data") {
-            graphDataNode = pageData.nodes[i];
-            break;
-        }
+        if (pageData.nodes[i].type === "graph-data") { graphDataNode = pageData.nodes[i]; break; }
     }
     if (!graphDataNode) return;
 
     var graphNodes = graphDataNode.attributes.nodes || [];
     var graphEdges = graphDataNode.attributes.edges || [];
 
-    // Kind → visual config
     var kindConfig = {
         "Deployment":   { color: "#58a6ff", shape: "box" },
         "StatefulSet":  { color: "#58a6ff", shape: "box" },
@@ -113,31 +174,33 @@
         "Dockerfile":   { color: "#8b949e", shape: "hexagon" },
         "PersistentVolumeClaim": { color: "#d2a8ff", shape: "box" }
     };
-
     var defaultConfig = { color: "#8b949e", shape: "box" };
 
-    // Build vis.js nodes
+    // Deterministic role-based levels: traffic flows top → bottom.
+    var kindLevel = {
+        "Ingress": 0,
+        "Service": 1,
+        "Deployment": 2, "StatefulSet": 2, "DaemonSet": 2, "Job": 2, "CronJob": 2,
+        "Dockerfile": 2,
+        "ConfigMap": 3, "Secret": 3, "PersistentVolumeClaim": 3
+    };
+
     var visNodes = graphNodes.map(function(n) {
         var cfg = kindConfig[n.kind] || defaultConfig;
+        var lvl = kindLevel[n.kind]; if (lvl === undefined) lvl = 2;
         return {
-            id: n.id,
-            label: n.label,
-            shape: cfg.shape,
+            id: n.id, label: n.label, shape: cfg.shape, level: lvl,
             color: {
-                background: cfg.color + "22",
-                border: cfg.color,
+                background: cfg.color + "22", border: cfg.color,
                 highlight: { background: cfg.color + "44", border: cfg.color },
                 hover: { background: cfg.color + "33", border: cfg.color }
             },
             font: { color: "#c9d1d9", size: 13 },
             borderWidth: 2,
-            _kind: n.kind,
-            _namespace: n.namespace || "",
-            _url: n.url
+            _kind: n.kind, _namespace: n.namespace || "", _url: n.url
         };
     });
 
-    // Edge type → visual config
     var edgeConfig = {
         "routes-to": { color: "#d29922", dashes: false },
         "selects":   { color: "#3fb950", dashes: false },
@@ -145,17 +208,12 @@
         "mounts":    { color: "#bc8cff", dashes: [5, 5] },
         "builds":    { color: "#8b949e", dashes: [10, 5] }
     };
-
     var defaultEdgeConfig = { color: "#30363d", dashes: false };
 
     var visEdges = graphEdges.map(function(e, i) {
         var cfg = edgeConfig[e.type] || defaultEdgeConfig;
         return {
-            id: "e" + i,
-            from: e.from,
-            to: e.to,
-            label: e.label || "",
-            arrows: "to",
+            id: "e" + i, from: e.from, to: e.to, label: e.label || "", arrows: "to",
             color: { color: cfg.color, highlight: cfg.color, hover: cfg.color },
             dashes: cfg.dashes,
             font: { color: "#8b949e", size: 11, strokeWidth: 0 },
@@ -164,179 +222,198 @@
         };
     });
 
-    var allNodes = new vis.DataSet(visNodes);
-    var allEdges = new vis.DataSet(visEdges);
-
     var container = document.getElementById("graph-canvas");
 
+    var nsMap = {};
+    visNodes.forEach(function(n) { nsMap[n.id] = n._namespace || ""; });
+
+    // Deterministic, physics-free layout. Each namespace gets its own cell in a
+    // grid; within a cell, nodes are stacked by role (Ingress → Service →
+    // Workload → Config/Secret), wrapping wide rows so a cell stays compact.
+    // Positions are computed, never simulated — the diagram renders identically
+    // every load, never jitters, and environments never overlap. All three
+    // views reuse these same fixed positions.
+    var NODE_DX = 185, ROW_DY = 115, LEVEL_GAP = 45, MAX_PER_ROW = 6, CELL_GUTTER = 190;
+
+    function layoutNamespace(nodes) {
+        var byLevel = {};
+        nodes.forEach(function(n) { var l = n.level || 0; (byLevel[l] || (byLevel[l] = [])).push(n); });
+        var levels = Object.keys(byLevel).map(Number).sort(function(a, b) { return a - b; });
+        var y = 0, width = 0;
+        levels.forEach(function(l) {
+            var arr = byLevel[l];
+            arr.sort(function(a, b) { return a.id < b.id ? -1 : 1; });
+            var rows = Math.ceil(arr.length / MAX_PER_ROW);
+            for (var r = 0; r < rows; r++) {
+                var rowItems = arr.slice(r * MAX_PER_ROW, (r + 1) * MAX_PER_ROW);
+                width = Math.max(width, rowItems.length * NODE_DX);
+                rowItems.forEach(function(n, i) {
+                    n._lx = (i - (rowItems.length - 1) / 2) * NODE_DX;
+                    n._ly = y + r * ROW_DY;
+                });
+            }
+            y += rows * ROW_DY + LEVEL_GAP;
+        });
+        return { w: width, h: y };
+    }
+
+    function computeLayout() {
+        var byNs = {};
+        visNodes.forEach(function(n) { var ns = n._namespace || ""; (byNs[ns] || (byNs[ns] = [])).push(n); });
+        var nsNames = Object.keys(byNs).sort();
+        var cellW = 0, cellH = 0, sizes = {};
+        nsNames.forEach(function(ns) {
+            var s = layoutNamespace(byNs[ns]);
+            sizes[ns] = s;
+            cellW = Math.max(cellW, s.w);
+            cellH = Math.max(cellH, s.h);
+        });
+        cellW += CELL_GUTTER; cellH += CELL_GUTTER;
+        var cols = Math.ceil(Math.sqrt(nsNames.length));
+        nsNames.forEach(function(ns, idx) {
+            var cx = (idx % cols) * cellW + cellW / 2;
+            var oy = Math.floor(idx / cols) * cellH;
+            byNs[ns].forEach(function(n) { n.x = Math.round(cx + n._lx); n.y = Math.round(oy + n._ly); });
+        });
+    }
+    computeLayout();
+
     var baseOptions = {
-        nodes: {
-            margin: { top: 10, bottom: 10, left: 12, right: 12 },
-            shadow: { enabled: true, color: "rgba(0,0,0,0.3)", size: 5 }
-        },
-        edges: {
-            width: 1.5
-        },
-        interaction: {
-            hover: true,
-            tooltipDelay: 100,
-            navigationButtons: true,
-            keyboard: true
-        },
-        physics: {
-            enabled: true,
-            solver: "forceAtlas2Based",
-            forceAtlas2Based: {
-                gravitationalConstant: -80,
-                centralGravity: 0.01,
-                springLength: 180,
-                springConstant: 0.04,
-                damping: 0.4
-            },
-            stabilization: { iterations: 200 }
-        }
+        nodes: { margin: { top: 10, bottom: 10, left: 12, right: 12 }, shadow: { enabled: true, color: "rgba(0,0,0,0.3)", size: 5 } },
+        edges: { width: 1.5 },
+        interaction: { hover: true, tooltipDelay: 100, navigationButtons: false, keyboard: true, zoomView: false },
+        physics: { enabled: false },
+        layout: { hierarchical: false, improvedLayout: false }
     };
 
-    var network = new vis.Network(container, { nodes: allNodes, edges: allEdges }, baseOptions);
+    var network = new vis.Network(container, { nodes: new vis.DataSet(visNodes), edges: new vis.DataSet(visEdges) }, baseOptions);
 
-    // URL map for click navigation
+    // Translucent labeled box behind each environment — the visual that makes
+    // "these nodes belong to namespace X" unmistakable. Computed each frame from
+    // the currently visible nodes, so it adapts when a view filters the set.
+    network.on("beforeDrawing", function(ctx) {
+        var groups = {};
+        network.body.nodeIndices.forEach(function(id) {
+            var nd = network.body.nodes[id], ns = nsMap[id];
+            if (ns === undefined) return;
+            var g = groups[ns] || (groups[ns] = { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity });
+            g.x1 = Math.min(g.x1, nd.x); g.y1 = Math.min(g.y1, nd.y);
+            g.x2 = Math.max(g.x2, nd.x); g.y2 = Math.max(g.y2, nd.y);
+        });
+        ctx.save();
+        ctx.font = "600 20px -apple-system, system-ui, sans-serif";
+        Object.keys(groups).sort().forEach(function(ns) {
+            var g = groups[ns], pad = 62, top = 34, r = 16;
+            var x = g.x1 - pad, y = g.y1 - pad - top, w = (g.x2 - g.x1) + pad * 2, h = (g.y2 - g.y1) + pad * 2 + top;
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+            ctx.fillStyle = "rgba(88,166,255,0.045)";
+            ctx.strokeStyle = "rgba(88,166,255,0.28)";
+            ctx.lineWidth = 1.5;
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = "rgba(201,209,217,0.9)";
+            ctx.fillText(ns === "" ? "(cluster-scoped)" : ns, x + 18, y + 28);
+        });
+        ctx.restore();
+    });
+
+    // Static layout: fit immediately, no stabilization to wait on. With physics
+    // off, vis draws synchronously during construction, so the first afterDrawing
+    // can fire before this listener attaches — a rAF fallback guarantees the fit.
+    var minScale = null, maxScale = 2.5;
+    function captureFit() { network.fit({ animation: false }); minScale = network.getScale(); }
+    network.once("afterDrawing", function() { if (minScale === null) captureFit(); });
+    requestAnimationFrame(function() { if (minScale === null) captureFit(); });
+    network.on("zoom", function() { if (network.getScale() > maxScale) network.moveTo({ scale: maxScale }); });
+
+    container.addEventListener("wheel", function(e) {
+        if (minScale === null) return;
+        var scale = network.getScale();
+        var zoomingOut = e.deltaY > 0;
+        if (zoomingOut && scale <= minScale * 1.02) {
+            return; // at fit: let the page scroll instead of zooming out
+        }
+        e.preventDefault();
+        var factor = zoomingOut ? 1 / 1.12 : 1.12;
+        var next = Math.min(maxScale, Math.max(minScale, scale * factor));
+        network.moveTo({ scale: next, animation: false });
+    }, { passive: false });
+
     var urlMap = {};
     graphNodes.forEach(function(n) { urlMap[n.id] = n.url; });
-
     network.on("click", function(params) {
-        if (params.nodes.length > 0) {
-            var url = urlMap[params.nodes[0]];
-            if (url) window.location.href = url;
-        }
+        if (params.nodes.length > 0) { var url = urlMap[params.nodes[0]]; if (url) window.location.href = url; }
     });
 
-    // Tooltip
     var tooltip = document.getElementById("node-tooltip");
+    var nodeIndex = {}; visNodes.forEach(function(n) { nodeIndex[n.id] = n; });
     network.on("hoverNode", function(params) {
-        var nodeData = allNodes.get(params.node);
-        if (!nodeData) return;
-        tooltip.innerHTML =
-            '<div class="tt-kind">' + nodeData._kind + '</div>' +
-            '<div class="tt-name">' + nodeData.label + '</div>' +
-            (nodeData._namespace ? '<div class="tt-ns">namespace: ' + nodeData._namespace + '</div>' : '');
+        var nd = nodeIndex[params.node]; if (!nd) return;
+        tooltip.innerHTML = '<div class="tt-kind">' + nd._kind + '</div><div class="tt-name">' + nd.label + '</div>' +
+            (nd._namespace ? '<div class="tt-ns">namespace: ' + nd._namespace + '</div>' : '');
         tooltip.style.display = "block";
     });
-
-    network.on("blurNode", function() {
-        tooltip.style.display = "none";
-    });
-
+    network.on("blurNode", function() { tooltip.style.display = "none"; });
     container.addEventListener("mousemove", function(e) {
-        tooltip.style.left = (e.clientX + 15) + "px";
-        tooltip.style.top = (e.clientY + 15) + "px";
+        tooltip.style.left = (e.clientX + 15) + "px"; tooltip.style.top = (e.clientY + 15) + "px";
     });
 
-    // View switching
+    // Views are filtered subsets of the same fixed layout — node positions never
+    // change, so switching views (or returning to Architecture) is instant and
+    // stable, with environments staying exactly where they were.
     var currentView = "architecture";
-
     var viewFilters = {
-        architecture: {
-            nodeKinds: null, // all
-            edgeTypes: null  // all
-        },
-        traffic: {
-            nodeKinds: ["Ingress", "Service", "Deployment", "StatefulSet", "DaemonSet"],
-            edgeTypes: ["routes-to", "selects"]
-        },
-        dependencies: {
-            nodeKinds: ["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "ConfigMap", "Secret", "PersistentVolumeClaim", "Dockerfile"],
-            edgeTypes: ["env-from", "mounts", "builds"]
-        }
-    };
-
-    var viewLayouts = {
-        architecture: {
-            physics: {
-                enabled: true,
-                solver: "forceAtlas2Based",
-                forceAtlas2Based: {
-                    gravitationalConstant: -80,
-                    centralGravity: 0.01,
-                    springLength: 180,
-                    springConstant: 0.04,
-                    damping: 0.4
-                },
-                stabilization: { iterations: 200 }
-            },
-            layout: { hierarchical: false }
-        },
-        traffic: {
-            physics: { enabled: false },
-            layout: {
-                hierarchical: {
-                    enabled: true,
-                    direction: "LR",
-                    sortMethod: "directed",
-                    levelSeparation: 250,
-                    nodeSpacing: 120
-                }
-            }
-        },
-        dependencies: {
-            physics: { enabled: false },
-            layout: {
-                hierarchical: {
-                    enabled: true,
-                    direction: "UD",
-                    sortMethod: "directed",
-                    levelSeparation: 180,
-                    nodeSpacing: 120
-                }
-            }
-        }
+        architecture: { nodeKinds: null, edgeTypes: null },
+        traffic:      { nodeKinds: ["Ingress", "Service", "Deployment", "StatefulSet", "DaemonSet"], edgeTypes: ["routes-to", "selects"] },
+        dependencies: { nodeKinds: ["Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "ConfigMap", "Secret", "PersistentVolumeClaim", "Dockerfile"], edgeTypes: ["env-from", "mounts", "builds"] }
     };
 
     function switchView(view) {
         if (view === currentView) return;
         currentView = view;
-
         var filter = viewFilters[view];
-        var filteredNodes, filteredEdges;
 
+        var filteredNodes = visNodes;
         if (filter.nodeKinds) {
-            var kindSet = {};
-            filter.nodeKinds.forEach(function(k) { kindSet[k] = true; });
+            var kindSet = {}; filter.nodeKinds.forEach(function(k) { kindSet[k] = true; });
             filteredNodes = visNodes.filter(function(n) { return kindSet[n._kind]; });
-        } else {
-            filteredNodes = visNodes;
         }
+        var nodeIdSet = {}; filteredNodes.forEach(function(n) { nodeIdSet[n.id] = true; });
 
-        var nodeIdSet = {};
-        filteredNodes.forEach(function(n) { nodeIdSet[n.id] = true; });
-
-        if (filter.edgeTypes) {
-            var typeSet = {};
-            filter.edgeTypes.forEach(function(t) { typeSet[t] = true; });
-            filteredEdges = visEdges.filter(function(e) {
-                return typeSet[e._type] && nodeIdSet[e.from] && nodeIdSet[e.to];
-            });
-        } else {
-            filteredEdges = visEdges.filter(function(e) {
-                return nodeIdSet[e.from] && nodeIdSet[e.to];
-            });
-        }
-
-        var opts = viewLayouts[view];
-        network.setOptions(opts);
-        network.setData({
-            nodes: new vis.DataSet(filteredNodes),
-            edges: new vis.DataSet(filteredEdges)
+        var filteredEdges = visEdges.filter(function(e) {
+            if (!(nodeIdSet[e.from] && nodeIdSet[e.to])) return false;
+            if (!filter.edgeTypes) return true;
+            return filter.edgeTypes.indexOf(e._type) !== -1;
         });
 
-        // Update active button
+        network.setData({ nodes: new vis.DataSet(filteredNodes), edges: new vis.DataSet(filteredEdges) });
+        minScale = null;
+        network.once("afterDrawing", captureFit);
+
         document.querySelectorAll("#view-buttons button").forEach(function(btn) {
             btn.classList.toggle("active", btn.getAttribute("data-view") === view);
         });
     }
 
     document.querySelectorAll("#view-buttons button").forEach(function(btn) {
+        btn.addEventListener("click", function() { switchView(this.getAttribute("data-view")); });
+    });
+
+    // Custom zoom / fit controls (replacing vis's default navigation buttons).
+    document.querySelectorAll("#graph-controls button").forEach(function(btn) {
         btn.addEventListener("click", function() {
-            switchView(this.getAttribute("data-view"));
+            var act = this.getAttribute("data-act");
+            if (act === "fit") { network.fit({ animation: { duration: 200 } }); return; }
+            var s = network.getScale();
+            var floor = minScale || 0.3;
+            var next = act === "in" ? s * 1.3 : s / 1.3;
+            next = Math.min(maxScale, Math.max(floor, next));
+            network.moveTo({ scale: next, animation: { duration: 150 } });
         });
     });
 })();

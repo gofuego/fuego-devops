@@ -1,22 +1,46 @@
+// Package devops is the fuego-devops format pack: it turns a repository's
+// Dockerfiles and Kubernetes manifests into an interactive infrastructure
+// documentation site. Register it on any Fuego engine with
+// eng.Use(devops.Pack()), or use the fuego-devops CLI (which scans a repo and
+// drives the build for you).
 package devops
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/FabioSol/fuego-devops/graph"
 	"github.com/FabioSol/fuego-devops/parser"
 	"github.com/FabioSol/fuego-devops/scanner"
+	"github.com/FabioSol/fuego/core"
 	"github.com/FabioSol/fuego/engine"
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed all:theme
 var themeFS embed.FS
+
+//go:embed config-defaults.yaml
+var configDefaults []byte
+
+// Pack returns the fuego-devops format pack: the Dockerfile and Kubernetes
+// parsers, the infrastructure theme, the resource routes + kind taxonomy as
+// config defaults, and the Index hook that builds the architecture graph and
+// per-namespace summary as a virtual overview page.
+func Pack() core.Pack {
+	theme, _ := fs.Sub(themeFS, "theme")
+	return core.Pack{
+		Name:           "devops",
+		Parsers:        []core.Parser{parser.Dockerfile(), parser.Kubernetes()},
+		Theme:          theme,
+		ConfigDefaults: configDefaults,
+		Hooks: core.Hooks{
+			Index: []core.IndexHook{graph.BuildOverviewHook},
+		},
+	}
+}
 
 // Options configures a fuego-devops site build.
 type Options struct {
@@ -26,41 +50,41 @@ type Options struct {
 	Command  string // "build" or "serve" (default: "serve")
 }
 
-// Run scans a DevOps repository and builds (or serves) an interactive
-// documentation site. It handles scanning, theme setup, config generation,
-// parser registration, and engine execution.
-//
-// The command is determined by os.Args: defaults to "serve", pass "build"
-// explicitly to produce static output.
+// Run scans a DevOps repository and builds (or serves) the documentation site.
+// The scanner emits content files into a temporary directory; the pack
+// supplies the parsers, theme, config, and graph — so Run only wires the
+// engine and points it at the scanned content. No theme or config files are
+// written to the repository.
 func Run(repoPath string, opts Options) error {
 	applyOptionDefaults(&opts)
 
-	// Scan the repo into content/
+	contentDir, err := os.MkdirTemp("", "fuego-devops-content-*")
+	if err != nil {
+		return fmt.Errorf("creating content dir: %w", err)
+	}
+	defer os.RemoveAll(contentDir)
+
 	fmt.Println("Scanning repository...")
-	if err := scanner.Run(repoPath, "content"); err != nil {
+	if err := scanner.Run(repoPath, contentDir); err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}
 
-	// Materialize embedded theme
-	if err := materializeTheme("theme"); err != nil {
-		return fmt.Errorf("setting up theme: %w", err)
-	}
+	eng := engine.New()
+	eng.Use(Pack())
 
-	// Write config with defaults
-	if err := writeConfig(opts); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+	bo := engine.BuildOptions{
+		ContentDir: contentDir,
+		OutputDir:  opts.Output,
+		SiteName:   opts.SiteName,
+		BaseURL:    opts.BaseURL,
 	}
-
-	// Ensure static dir exists (prevents build errors when empty)
-	os.MkdirAll("public", 0o755)
 
 	fmt.Printf("\nRunning: %s\n", opts.Command)
-	eng := engine.New()
-	eng.Register(parser.Dockerfile())
-	eng.Register(parser.Kubernetes())
-	eng.BeforeRender(graph.BuildGraphHook)
-
-	return eng.Run([]string{"fuego-devops", opts.Command})
+	ctx := context.Background()
+	if opts.Command == "serve" {
+		return eng.Serve(ctx, bo)
+	}
+	return eng.Build(ctx, bo)
 }
 
 func applyOptionDefaults(opts *Options) {
@@ -73,99 +97,4 @@ func applyOptionDefaults(opts *Options) {
 	if opts.Command == "" {
 		opts.Command = "serve"
 	}
-}
-
-// materializeTheme extracts the embedded theme files to the given directory,
-// overwriting any existing files to stay in sync with the library version.
-func materializeTheme(dir string) error {
-	return fs.WalkDir(themeFS, "theme", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// path is "theme/..." — use it directly as the target since dir == "theme"
-		target := path
-		if dir != "theme" {
-			rel, _ := filepath.Rel("theme", path)
-			target = filepath.Join(dir, rel)
-		}
-
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-
-		data, err := themeFS.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	})
-}
-
-type siteConfig struct {
-	Name    string `yaml:"name"`
-	BaseURL string `yaml:"base_url"`
-}
-
-type dirsConfig struct {
-	Content string `yaml:"content"`
-	Theme   string `yaml:"theme"`
-	Output  string `yaml:"output"`
-	Static  string `yaml:"static"`
-}
-
-type taxonomyConfig struct {
-	Path        string `yaml:"path"`
-	Layout      string `yaml:"layout"`
-	IndexPath   string `yaml:"index_path"`
-	IndexLayout string `yaml:"index_layout"`
-}
-
-type configFile struct {
-	Site       siteConfig                `yaml:"site"`
-	Dirs       dirsConfig                `yaml:"dirs"`
-	Routes     map[string]string         `yaml:"routes"`
-	Taxonomies map[string]taxonomyConfig `yaml:"taxonomies"`
-}
-
-func writeConfig(opts Options) error {
-	cfg := configFile{
-		Site: siteConfig{
-			Name:    opts.SiteName,
-			BaseURL: opts.BaseURL,
-		},
-		Dirs: dirsConfig{
-			Content: "content",
-			Theme:   "theme",
-			Output:  opts.Output,
-			Static:  "public",
-		},
-		Routes: map[string]string{
-			"dockerfile": "/dockerfiles/{slug}",
-			"k8s":        "/kubernetes/{slug}",
-			"diagram":    "/",
-		},
-		Taxonomies: map[string]taxonomyConfig{
-			"resource_kind": {
-				Path:        "/by-kind/{term}",
-				Layout:      "default",
-				IndexPath:   "/by-kind",
-				IndexLayout: "default",
-			},
-		},
-	}
-
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-
-	// Prepend a comment so users know not to hand-edit
-	header := "# Generated by fuego-devops — do not edit manually.\n"
-	content := strings.ReplaceAll(string(data), "    ", "  ")
-	return os.WriteFile("config.yaml", []byte(header+content), 0o644)
 }

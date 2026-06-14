@@ -27,7 +27,7 @@ func TestBuildGraphHook_IngressToService(t *testing.T) {
 		}),
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestBuildGraphHook_ServiceToDeployment(t *testing.T) {
 		}),
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestBuildGraphHook_EnvRef(t *testing.T) {
 		}),
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestBuildGraphHook_VolumeRef(t *testing.T) {
 		}),
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestBuildGraphHook_NoK8sPages(t *testing.T) {
 		{Type: "taxonomy-term", URL: "/by-kind/k8s/"},
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestBuildGraphHook_DockerfileImageMatch(t *testing.T) {
 		}),
 	}
 
-	result, err := BuildGraphHook(pages)
+	result, err := BuildOverviewHook(pages)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -3,7 +3,7 @@ module github.com/FabioSol/fuego-devops
 go 1.25.0
 
 require (
-	github.com/FabioSol/fuego v0.2.0
+	github.com/FabioSol/fuego v0.3.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 

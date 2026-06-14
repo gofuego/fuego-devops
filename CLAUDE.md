@@ -2,127 +2,227 @@
 
 ## What is fuego-devops?
 
-fuego-devops is a **domain-specific static site generator for DevOps infrastructure**, built on top of the [Fuego](https://github.com/FabioSol/fuego) meta-engine. It scans a repository for Dockerfiles and Kubernetes manifests, extracts their structure and relationships, and produces an interactive documentation site with canvas-based architecture diagrams.
+fuego-devops is a **domain-specific static site generator for DevOps
+infrastructure**, built on the [Fuego](https://github.com/FabioSol/fuego)
+meta-engine. Point it at a repository; it discovers the Dockerfiles and
+Kubernetes manifests, resolves their relationships, and produces an interactive
+documentation site: a per-namespace infrastructure overview, an architecture
+diagram, and a page per resource.
 
-The core value proposition: **point it at an infrastructure repo, get an interactive architecture diagram and per-resource documentation with zero configuration**.
+It is structured as a **Fuego format pack** (`devops.Pack()`) plus a **scanner**
+front-end and a thin CLI. The pack renders already-discovered content; the
+scanner turns an arbitrary repo into content the pack can consume. `devops.Run`
+and the CLI wire the two together.
 
 ## How it uses Fuego
 
-fuego-devops is a concrete SSG built using Fuego's extension points. It does **not** modify fuego core. Everything works through the public API:
+fuego-devops does **not** fork or modify Fuego. Everything works through Fuego
+v0.3's public extension points:
 
 | Fuego extension point | fuego-devops usage |
 |---|---|
-| `core.Parser` | Kubernetes manifest parser (`parser.Kubernetes()`) |
-| `core.FilenameParser` | Dockerfile parser (`parser.Dockerfile()`) |
-| `core.BeforeRenderHook` | Graph builder (`graph.BuildGraphHook`) |
-| `theme/` templates | Embedded dark-theme with vis.js diagram layout |
-| `core.WithYAMLFrontmatter` | Wraps both parsers for scanner-generated frontmatter |
-| `core.WithNoEnvelope` | Not used — both content types carry frontmatter from the scanner |
+| `core.Parser` | `parser.Kubernetes()` parses `.k8s` manifests |
+| `core.FilenameParser` | `parser.Dockerfile()` parses `Dockerfile` / `.dockerfile` |
+| `core.Pack` (`eng.Use`) | `devops.Pack()` bundles parsers + theme + config + hook |
+| `Pack.Theme fs.FS` | embedded `theme/` (templates + `static/`, vis-network) |
+| `Pack.ConfigDefaults` | `config-defaults.yaml` (routes + `resource_kind` taxonomy) |
+| `core.IndexHook` | `graph.BuildOverviewHook` builds the overview virtual page |
+| `engine.Build/Serve` | the programmatic build API that `devops.Run` drives |
+
+If something here feels limiting, the fix usually belongs in Fuego's pack API,
+not in a workaround here (see "What NOT to Do").
+
+## Authored vs. extracted content
+
+This is the defining difference from a pack like fuego-adr. ADRs are **authored**
+— a human writes `*.adr.md` files and the pack reads them directly. Infrastructure
+manifests are **extracted** — nobody writes "the site"; the truth lives in a repo
+of Dockerfiles, raw manifests, Kustomize overlays, and Helm charts. So
+fuego-devops adds a **scanner** stage in front of the pack that turns that repo
+into pack-consumable content files. The pack itself never sees the repo.
 
 ## Architecture Decisions
 
-### AD-1: Scanner produces fuego-compatible content files
+### AD-1: A format pack behind a scanner front-end
 
-**Decision:** The scanner (`scanner.Run`) walks a repository and emits files into a `content/` directory with YAML frontmatter and the original file contents as the body. Dockerfiles get a `.dockerfile` extension, K8s manifests get `.k8s`.
+**Decision:** All rendering logic (parsers, theme, config defaults, the graph
+hook) lives in `devops.Pack()`. A separate `scanner` package turns a repo into
+content files, and `devops.Run` composes them: scan to a temp dir →
+`engine.New()` → `eng.Use(devops.Pack())` → `eng.Build`/`eng.Serve`.
 
-**Why:** Fuego discovers content by extension and dispatches to parsers. The scanner bridges the gap between arbitrary repo layouts and fuego's content model. By writing frontmatter-wrapped files, the scanner provides metadata (`title`, `source_path`, `resource_kind`) without requiring the parsers to understand repo structure.
+**Why:** The pack is the v0.3 unit of reuse and stays repo-agnostic — anyone can
+`eng.Use(devops.Pack())` over a directory of already-emitted content, or compose
+it into a larger site. The scanner is the only part that knows about repo layout,
+Kustomize, and Helm. Keeping them separate means the rendering contract is
+testable without a scanner and the scanner is testable without rendering.
 
-### AD-2: Relationship data extracted during parsing, not in the graph hook
+### AD-2: The scanner renders Kustomize/Helm before scanning
 
-**Decision:** Parsers emit specialized node types that carry relationship data — `pod-template-labels`, `env-ref`, `service-spec.selectorMap`, `volume.refName`, `ingress-rule.serviceName`. The graph hook reads these nodes to build edges.
+**Decision:** The scanner does not raw-read every YAML. It discovers
+`kustomization.yaml` directories and `Chart.yaml` directories, runs
+`kustomize build` / `helm template`, and scans the **rendered** manifest stream.
+Files outside any templating tree are raw-scanned; Dockerfiles are always
+scanned.
 
-**Why:** Parsers have access to the raw manifest structure and can extract relationship fields precisely. The graph hook operates on the already-parsed `[]core.Node` slice across all pages — it doesn't re-parse YAML. This keeps the graph hook simple: it pattern-matches on node types and attributes rather than understanding YAML semantics.
+**Why:** Raw source is misleading. Base manifests omit namespaces, and the same
+resource is declared many times across overlays — scanning source produces a
+giant "(cluster-scoped)" bucket and massive duplication. Rendering resolves both:
+overlays inject namespaces, so each environment renders once, correctly grouped.
+See AD-2a/2b for the two rules that make this reliable.
 
-### AD-3: Virtual overview page via BeforeRender hook
+### AD-2a: Render only "leaf" overlays, found by reach-from-outside
 
-**Decision:** `BuildGraphHook` creates a virtual `*core.Page` with `Type: "diagram"` and a single `graph-data` node whose Attributes carry the full `{nodes, edges}` structure. This page is appended to the page list.
+**Decision:** `kustomizeLeaves` builds the kustomization reference graph and
+renders only directories **not reached from outside their own subtree** — i.e.
+nothing outside them references them or their children.
 
-**Why:** This follows the same pattern as fuego's taxonomy builder — virtual pages go through the standard RENDER phase. The diagram layout template reads the graph data from `{{.JSON}}` and initializes vis.js. No changes to fuego core are needed.
+**Why:** This single rule excludes both referenced fragments (`overlays/eng/api`,
+pulled into `overlays/eng`) and base aggregates (`base/`, whose children are
+pulled into overlays from outside `base/`). The result: each environment overlay
+renders exactly once, with its namespace injected, and bases are never scanned
+namespace-less.
 
-### AD-4: Embedded theme with materialization
+### AD-2b: Deduplicate by cluster identity
 
-**Decision:** The theme directory is embedded in the Go binary via `//go:embed all:theme` and materialized to disk at runtime. The `Run()` function writes theme files before invoking the fuego engine.
+**Decision:** `emitManifestStream` keys every emitted resource by
+`namespace/kind/name` in a `seen` set shared across all renders, skipping repeats.
 
-**Why:** This eliminates the need for consumers to symlink or copy theme files. The binary is self-contained — `go install` produces a working CLI. Theme files are overwritten on each run to stay in sync with the library version.
+**Why:** A `ClusterRole` named `prometheus` is one object in the cluster no matter
+how many overlays declare it. Namespaced resources are naturally unique per
+namespace; cluster-scoped ones would otherwise repeat once per overlay. Dedup by
+real cluster identity documents each object once.
 
-### AD-5: Generated config, not user-authored
+### AD-2c: Graceful degradation when binaries are absent
 
-**Decision:** `Run()` generates `config.yaml` with routes, taxonomies, and directory mappings. Users never write this file — they pass `Options` (site name, base URL, output dir) and the rest is handled.
+**Decision:** If `kustomize` is not on `PATH`, overlays fall back to raw scanning
+(with a warning). If `helm` is absent, charts are skipped with a warning. A
+single overlay that fails to build warns (showing the `Error:` line from stderr)
+and is skipped — it never aborts the scan.
 
-**Why:** Routes (`/dockerfiles/{slug}`, `/kubernetes/{slug}`, `/`) and taxonomies (`resource_kind`) are fuego-devops conventions, not user choices. Generating the config removes a class of copy-paste errors and keeps the consumer's project minimal.
+**Why:** The tool must be useful on a machine without the full toolchain, and one
+broken overlay in a large repo shouldn't take down the whole site.
 
-### AD-6: Two usage modes — Go API and CLI binary
+### AD-3: Parsers extract relationships; the graph hook reads attributes
 
-**Decision:** fuego-devops exposes both a Go API (`devops.Run(repoPath, opts)`) and a CLI binary (`fuego-devops [flags] <repo-path> [build|serve]`). The CLI delegates to the Go API.
+**Decision:** Parsers emit specialized node types carrying relationship data —
+`pod-template-labels`, `env-ref`, `service-spec.selectorMap`, `volume.refName`,
+`ingress-rule.serviceName`, `container-spec.image`. The graph hook reads these
+node attributes; it never re-parses YAML.
 
-**Why:** The Go API serves library consumers (like `acme-docs`) who want programmatic control. The CLI serves CI pipelines that need to generate docs without writing Go code. Both share the same `Run()` function.
+**Why:** Parsers have the raw structure and extract relationship fields precisely.
+The hook then pattern-matches on node types/attributes across all pages, keeping
+it free of YAML semantics.
+
+### AD-4: The overview is a virtual page built in an Index hook
+
+**Decision:** `graph.BuildOverviewHook` (a `core.IndexHook`) indexes all K8s and
+Dockerfile pages, builds the graph and a per-namespace summary, and appends one
+virtual `*core.Page` at `/` with `Layout: "diagram"`. It carries a server-rendered
+`summary` in its envelope and the full `{nodes, edges}` as a single `graph-data`
+node.
+
+**Why:** Index hooks run during INDEX, after ROUTE has resolved real-page URLs
+(so the summary and graph can link to `/kubernetes/{slug}/`) and before the
+collision re-check, so the overview is validated like any other page. The summary
+is rendered server-side (HTML, indexable, no-JS-friendly); the diagram is rendered
+client-side from the graph JSON.
+
+### AD-5: The diagram uses a deterministic, physics-free layout
+
+**Decision:** `theme/layouts/diagram.html` computes node positions instead of
+simulating them. Each namespace gets its own cell in a grid; within a cell, nodes
+are stacked by role (Ingress → Service → Workload → Config/Secret) and wrapped.
+Physics is disabled; a translucent labeled box is drawn behind each namespace.
+All three views (Architecture / Traffic Flow / Dependencies) are **filtered
+subsets of the same fixed positions**.
+
+**Why:** Force-directed physics cannot *reliably* separate many environments — it
+jitters on load, settles differently each time, and overlaps. Computed positions
+render identically every load, never move, and never overlap. Sharing one fixed
+layout across views means switching (and returning) is instant and stable, and
+"Traffic Flow" becomes a clean per-environment subset instead of a global
+hierarchical hairball.
+
+### AD-6: Self-contained — nothing is written to the repo or cwd
+
+**Decision:** The pack embeds its theme (`//go:embed all:theme`) and static
+assets. `devops.Run` scans into an `os.MkdirTemp` content dir and removes it on
+exit. No `config.yaml`, `theme/`, or `content/` is ever written to the scanned
+repo or the working directory.
+
+**Why:** The binary is self-contained — `go install` yields a working CLI, and
+running it leaves no artifacts behind. (Earlier versions materialized the theme
+and a generated `config.yaml` into the cwd; v0.3's `Pack.Theme` + `ConfigDefaults`
++ programmatic `engine.Build` removed all of that.)
+
+### AD-7: Two entry points — the pack and the CLI/Run wrapper
+
+**Decision:** fuego-devops exposes `devops.Pack()` (for composition over
+already-scanned content) and `devops.Run(repoPath, Options)` / the
+`fuego-devops` CLI (scan + build/serve). The CLI delegates to `Run`.
+
+**Why:** The pack serves library consumers who already have content or want ADR-
+style composition; `Run`/CLI serve the common case — point at a repo, get a site
+— for CI pipelines and local use without writing Go.
 
 ## Project Structure
 
 ```
 fuego-devops/
-  devops.go                Top-level API: Run(), Options, theme embedding, config generation
-  cmd/fuego-devops/        CLI binary entry point
-  scanner/                 Repository scanning — walks repos, emits content files
+  devops.go                Pack() + Run(repoPath, Options): scan → engine.Build/Serve
+  config-defaults.yaml     routes + resource_kind taxonomy (Pack.ConfigDefaults)
+  cmd/fuego-devops/        CLI binary (flags → devops.Run)
+  scanner/
+    scanner.go             Repo walk, Kustomize/Helm render, dedup, content emit
   parser/
-    kubernetes.go          K8s manifest parser — emits structured nodes for all resource kinds
-    dockerfile.go          Dockerfile parser — emits stage/instruction nodes
+    kubernetes.go          K8s manifest parser — structured nodes per resource kind
+    dockerfile.go          Dockerfile parser (FilenameParser) — stage/instruction nodes
   graph/
-    graph.go               BeforeRender hook — builds infrastructure graph from parsed pages
+    graph.go               BuildOverviewHook (IndexHook) + edge construction
+    summary.go             Per-namespace, workload-centric summary (deterministic)
   theme/
-    base.html              HTML shell (dark theme, vis.js CDN)
+    base.html              HTML shell (dark theme, vis-network via CDN)
     layouts/
-      default.html         Per-resource detail page layout
-      diagram.html         Full-viewport interactive graph layout (vis.js)
-    renderers/             Per-node-type HTML templates (17 renderers)
+      default.html         Per-resource detail page
+      diagram.html         Overview: summary + interactive diagram
+    renderers/             Per-node-type HTML templates
 ```
 
-## Package Responsibilities
+`scanner`, `parser`, and `graph` depend only on Fuego (`core`, `engine`) and
+`gopkg.in/yaml.v3`. The root `devops` package wires them into the pack and `Run`.
 
-### `devops` (root package)
+## Build flow
 
-The public API. `Run(repoPath string, opts Options) error` is the single entry point that orchestrates:
-1. `scanner.Run()` — scan repo into `content/`
-2. `materializeTheme()` — extract embedded theme to `theme/`
-3. `writeConfig()` — generate `config.yaml` with defaults + user overrides
-4. Engine setup — register parsers, hook
-5. `eng.Run()` — delegate to fuego
+`fuego-devops ./my-repo build` does:
 
-### `scanner`
+1. `devops.Run` applies option defaults and creates a temp content dir.
+2. `scanner.Run(repoPath, contentDir)` — render Kustomize/Helm, dedup, emit
+   `*.k8s` / `*.dockerfile` content files with frontmatter
+   (`title`, `source_path`, `resource_kind`).
+3. `engine.New()`; `eng.Use(devops.Pack())`.
+4. `eng.Build`/`eng.Serve(ctx, BuildOptions{ContentDir, OutputDir, SiteName, BaseURL})`.
+5. The temp content dir is removed on return.
 
-Walks a repository, identifies DevOps files, and emits fuego-compatible content files with YAML frontmatter.
+Inside Fuego, the pack contributes the two parsers (so `.k8s`/`.dockerfile`/
+`Dockerfile` are discovered as content), the theme, the route/taxonomy defaults,
+and the Index hook that builds the overview.
 
-- **Dockerfile detection:** filename is `Dockerfile` or `Dockerfile.*`
-- **K8s detection:** `.yaml`/`.yml` files containing both `apiVersion:` and `kind:`
-- **Skips:** hidden directories, `node_modules/`, `vendor/`
-- **Output naming:** path separators become `--` (e.g., `infra/prod/deploy.yaml` becomes `infra--prod--deploy.yaml.k8s`)
+## The graph hook
 
-### `parser`
+`BuildOverviewHook` constructs edges by reading node attributes:
 
-Two parsers that produce structured `[]core.Node` for rendering and graph building.
+- **Ingress → Service** (`routes-to`): `ingress-rule.serviceName`
+- **Service → Workload** (`selects`): `service-spec.selectorMap` matched against `pod-template-labels`
+- **Workload → ConfigMap/Secret** (`env-from`): `env-ref.refKind` + `env-ref.refName`
+- **Workload → ConfigMap/Secret/PVC** (`mounts`): `volume.refName` + `volume.volumeType`
+- **Dockerfile → Workload** (`builds`): Dockerfile base image matches `container-spec.image` (tags stripped)
 
-**`Kubernetes()`** — Parses YAML manifests. Dispatches by `kind`:
-- Workloads (Deployment, StatefulSet, DaemonSet, Job, CronJob) — emits `resource-header`, `metadata`, `replicas`, `pod-template-labels`, `container-spec`, `env-ref`, `volume`
-- Service — emits `service-spec`, `port-mapping`
-- ConfigMap — emits `config-data`
-- Secret — emits `secret-data` (values redacted)
-- Ingress — emits `ingress-rule`
-- Unknown kinds — emits `spec` (raw YAML)
-
-**`Dockerfile()`** — Parses Dockerfiles line-by-line. Implements `FilenameParser` for extensionless `Dockerfile` files. Emits `stage`, `instruction`, `comment` nodes. Tracks multi-stage builds (`COPY --from=`) and collects base images into the envelope.
-
-### `graph`
-
-`BuildGraphHook` is a `core.BeforeRenderHook` that:
-1. Indexes all K8s and Dockerfile pages
-2. Builds lookup maps for fast resource resolution
-3. Constructs edges by analyzing node attributes:
-   - **Ingress to Service** (`routes-to`): `ingress-rule.serviceName`
-   - **Service to Workload** (`selects`): `service-spec.selectorMap` matched against `pod-template-labels`
-   - **Workload to ConfigMap/Secret** (`env-from`): `env-ref.refKind` + `env-ref.refName`
-   - **Workload to ConfigMap/Secret/PVC** (`mounts`): `volume.refName`
-   - **Dockerfile to Workload** (`builds`): base image name matches container image name (tags stripped)
-4. Creates a virtual overview page at `/` with the full graph as a `graph-data` node
+`summary.go` turns the graph into a per-namespace, workload-centric view: each
+workload lists what **exposes** it (services + fronting ingresses), what it
+**depends on** (configmaps/secrets/volumes), and what **builds** it (dockerfiles).
+Resources not attached to a workload appear under the namespace's "other
+resources". It is fully deterministic (namespaces, workloads, and refs sorted) —
+covered by `graph/summary_test.go`.
 
 ## Node Type Reference
 
@@ -130,11 +230,11 @@ Two parsers that produce structured `[]core.Node` for rendering and graph buildi
 
 | Node type | Emitted by | Key attributes | Used by graph |
 |-----------|-----------|----------------|---------------|
-| `resource-header` | All kinds | `kind`, `apiVersion`, `name`, `namespace` | Yes — builds graph node ID |
+| `resource-header` | All kinds | `kind`, `apiVersion`, `name`, `namespace` | Yes — graph node ID |
 | `metadata` | All kinds | label/annotation key-value pairs | No |
 | `replicas` | Workloads | `count` | No |
 | `pod-template-labels` | Workloads | label key-value pairs | Yes — Service selector matching |
-| `container-spec` | Workloads | `name`, `image`, `ports`, `limits`, `requests`, `envCount`, `volumeMounts` | Yes — Dockerfile image matching |
+| `container-spec` | Workloads | `name`, `image`, `ports`, `limits`, `requests`, `volumeMounts` | Yes — Dockerfile image matching |
 | `env-ref` | Workloads | `refKind`, `refName`, `container` | Yes — ConfigMap/Secret edges |
 | `volume` | Workloads | `name`, `volumeType`, `refName` | Yes — volume mount edges |
 | `service-spec` | Service | `serviceType`, `selector`, `selectorMap` | Yes — workload selection |
@@ -148,140 +248,75 @@ Two parsers that produce structured `[]core.Node` for rendering and graph buildi
 
 | Node type | Key attributes | Used by graph |
 |-----------|----------------|---------------|
-| `stage` | `image`, `alias` | No (images go in envelope) |
+| `stage` | `image`, `alias` | No (images go in the envelope) |
 | `instruction` | `instruction`, `stage`, `copyFrom` | No |
 | `comment` | (content is text) | No |
 
-## Theme
-
-The theme is embedded in the binary and materialized at runtime.
-
-### Layouts
-
-- **`default.html`** — Per-resource detail page. Shows title, source path link, and rendered node content.
-- **`diagram.html`** — Full-viewport interactive graph. Three view modes switched client-side:
-  - **Architecture** — force-directed layout (`forceAtlas2Based`), all resources
-  - **Traffic Flow** — hierarchical left-to-right, only Ingress/Service/Workload
-  - **Dependencies** — hierarchical top-down, Workload/ConfigMap/Secret/PVC
-  - Click a node to navigate to its detail page. Hover for kind/name/namespace tooltip.
-
-### Renderers (17)
-
-One HTML template per node type. Located in `theme/renderers/{type}.html`. Each receives a `core.Node` as template data. The `graph-data` renderer is intentionally empty (its data is consumed by the diagram layout's JavaScript, not rendered as HTML).
-
-### vis.js
-
-Loaded via CDN (`unpkg.com/vis-network/standalone/umd/vis-network.min.js`) in `base.html`. The diagram layout reads graph data from `{{.JSON}}`, builds vis.js DataSets, and maps resource kinds to shapes/colors:
-
-| Kind | Shape | Color |
-|------|-------|-------|
-| Deployment, StatefulSet, DaemonSet | box | blue |
-| Service | ellipse | green |
-| Ingress | diamond | orange |
-| ConfigMap | box | purple |
-| Secret | box | red |
-| Dockerfile | hexagon | gray |
-| Other | box | teal |
-
-## CLI Usage
-
-```
-fuego-devops [flags] <repo-path> [build|serve]
-
-Flags:
-  -site-name string    Site title (default: "DevOps Docs")
-  -base-url string     Base URL for the generated site
-  -output string       Output directory (default: "build")
-```
-
-### Examples
-
-```bash
-# Local development with live reload
-fuego-devops ./my-infra-repo
-
-# CI build with custom name
-fuego-devops -site-name="Acme Infra" -base-url="/docs" ./repo build
-
-# GitHub Actions (no Go code needed)
-go install github.com/FabioSol/fuego-devops/cmd/fuego-devops@latest
-mkdir site && cd site
-fuego-devops -site-name="My Infra" $GITHUB_WORKSPACE build
-```
-
-### Go API
-
-```go
-import devops "github.com/FabioSol/fuego-devops"
-
-func main() {
-    err := devops.Run("../my-infra-repo", devops.Options{
-        SiteName: "My Infrastructure",
-        Command:  "build",
-    })
-}
-```
-
-## Generated Artifacts
-
-`Run()` creates these in the working directory (not in the scanned repo):
-
-| Path | Generated by | Committed? |
-|------|-------------|------------|
-| `content/` | scanner | No — regenerated each run |
-| `theme/` | materializeTheme | No — overwritten from embedded FS |
-| `config.yaml` | writeConfig | No — regenerated each run |
-| `public/` | ensured by Run | No — empty, required by fuego |
-| `build/` | fuego engine | No — output artifact |
-
-For consumer projects, `.gitignore` should include: `content/`, `theme/`, `config.yaml`, `build/`, `public/`.
-
 ## Common Tasks
 
-### Adding support for a new K8s kind
+### Add support for a new K8s kind
+1. Add a case in the parser in `parser/kubernetes.go`.
+2. Emit nodes whose types match existing renderers (or add renderers).
+3. If the kind carries relationships (selectors, refs), emit nodes the graph hook can read.
+4. Add edge logic in `buildGraph()` (and `summary.go`) if it participates in relationships.
+5. Add a `theme/renderers/{type}.html` for any new node types and update `parser/kubernetes_test.go`.
 
-1. Add a case in `parseKubernetes()` in `parser/kubernetes.go`
-2. Emit nodes with types matching existing renderers (or create new ones)
-3. If the kind has relationship data (selectors, refs), emit nodes that `graph/graph.go` can consume
-4. Add edge-building logic in `buildGraph()` if needed
-5. Add a renderer in `theme/renderers/{type}.html` for any new node types
-6. Update tests in `parser/kubernetes_test.go`
+### Add a new edge type to the graph
+1. Ensure the parser emits a node carrying the relationship in its attributes.
+2. Add edge logic in `buildGraph()` in `graph/graph.go` via `addEdge(from, to, type, label)` (it dedups).
+3. Surface it in `summary.go` if it belongs in the per-namespace summary.
+4. Add tests in `graph/graph_test.go`; optionally filter it in a `diagram.html` view.
 
-### Adding a new edge type to the graph
+### Teach the scanner a new source format (e.g. Terraform, Jsonnet)
+1. Detect it in `scanner/scanner.go` — either a new templating tree (render then scan, like Kustomize/Helm) or a raw file type.
+2. Emit content with the right extension and `resource_kind` frontmatter.
+3. Add a parser in `parser/`, register it in `devops.Pack()`, and add a route in `config-defaults.yaml`.
 
-1. Ensure the parser emits a node with the relationship data in its attributes
-2. Add edge-building logic in `buildGraph()` in `graph/graph.go`
-3. Use `addEdge(from, to, edgeType, label)` which handles deduplication
-4. Add tests in `graph/graph_test.go`
-5. Optionally update `diagram.html` if the new edge type needs filtering in specific views
+### Change resource routing or add a taxonomy
+Edit `config-defaults.yaml`. The site config / CLI options still win via deep-merge.
 
-### Adding a new file type (e.g., Helm charts, Terraform)
+### Customize the diagram or a renderer
+Edit `theme/layouts/diagram.html` or `theme/renderers/{type}.html`. The theme is
+embedded, so rebuild the binary to pick up changes (`go build ./cmd/fuego-devops`).
+A consumer can override any file by placing their own `theme/...` over the pack's.
 
-1. Create a new parser in `parser/{name}.go` implementing `core.Parser`
-2. Update `scanner/scanner.go` to detect the new file type and emit with the correct extension
-3. Register the parser in `devops.go` (`eng.Register(parser.NewParser())`)
-4. Add a route in `writeConfig()` for the new type
-5. Create renderers in `theme/renderers/` for any new node types
-6. Update `graph/graph.go` if the new type participates in relationship edges
+## Testing
 
-### Customizing the theme
-
-The embedded theme is overwritten on each `Run()`. To customize:
-- Fork fuego-devops and modify files in `theme/` directly, or
-- Use the Go API and call the fuego engine directly (bypassing `Run()`) with your own theme directory
+- `go test ./...` — unit tests for the scanner, parsers, and graph/summary.
+- `scanner/scanner_test.go` covers detection, path flattening, and
+  `TestKustomizeLeaves` (the base-vs-overlay distinction).
+- `graph/summary_test.go` locks in the deterministic per-namespace summary.
+- Manual end-to-end: `go build -o /tmp/fd ./cmd/fuego-devops && /tmp/fd ./some-repo build`.
+- Render-aware scanning needs `kustomize` (and optionally `helm`) on `PATH`; the
+  code degrades gracefully without them, but exercise both when changing the scanner.
 
 ## External Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `github.com/FabioSol/fuego` | Meta-engine SSG — pipeline, routing, rendering, serving |
-| `gopkg.in/yaml.v3` | YAML parsing for Kubernetes manifests |
+| `github.com/FabioSol/fuego` | Meta-engine SSG — pipeline, routing, rendering, serving, pack API |
+| `gopkg.in/yaml.v3` | YAML parsing (manifests, kustomization files, render-stream splitting) |
+| `kustomize` (binary, external) | Renders Kustomize overlays before scanning |
+| `helm` (binary, external) | Renders Helm charts before scanning |
 
-All other dependencies (cobra, doublestar, fsnotify, etc.) are transitive through fuego.
+All other dependencies (cobra, doublestar, fsnotify, …) are transitive through fuego.
+
+## Dependency note
+
+`go.mod` pins a tagged Fuego release. While consuming an unreleased engine
+feature you may add a `replace` pointing at a local Fuego checkout — pin a tag and
+remove the replace before publishing.
 
 ## What NOT to Do
 
-- **Don't modify fuego core for fuego-devops features.** Everything works through parsers, hooks, and templates. If you need a new fuego capability, add it to fuego's public API first.
-- **Don't hardcode resource relationships in the theme.** The graph hook builds all edges programmatically. The theme only visualizes what the hook provides.
-- **Don't parse YAML in the graph hook.** Relationship data should be extracted by parsers and stored in node attributes. The graph hook reads attributes, not raw content.
-- **Don't hand-edit generated files** (`config.yaml`, `theme/`, `content/`). They are overwritten on each run. Change the source: `devops.go` for config/theme, `scanner/` for content.
+- **Don't modify Fuego core for fuego-devops features.** Everything works through
+  parsers, hooks, the pack, and templates. If you need a new engine capability,
+  add it to Fuego's public API first.
+- **Don't raw-scan Kustomize/Helm sources.** Render them and scan the output, or
+  the namespaces and deduplication are wrong (AD-2).
+- **Don't parse YAML in the graph hook.** Extract relationship data in the parsers
+  into node attributes; the hook reads attributes, not raw content (AD-3).
+- **Don't reintroduce force physics for the diagram.** Layout is computed and
+  deterministic on purpose (AD-5).
+- **Don't write files into the scanned repo or cwd.** The scanner uses a temp dir;
+  the theme and config come from the pack (AD-6).

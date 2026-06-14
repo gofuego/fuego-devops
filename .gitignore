@@ -1,9 +1,6 @@
 # Compiled binary (root only, not cmd/fuego-devops/)
 /fuego-devops
 
-# Generated at runtime by devops.Run()
-config.yaml
-
 # Build output
 build/
 

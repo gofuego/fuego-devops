@@ -46,9 +46,9 @@ type pageInfo struct {
 	nodeTypes map[string][]core.Node // nodes grouped by type
 }
 
-// BuildGraphHook is a BeforeRenderHook that builds an infrastructure graph
+// BuildOverviewHook is an IndexHook that builds an infrastructure graph
 // from all parsed pages and injects a virtual overview page.
-func BuildGraphHook(pages []*core.Page) ([]*core.Page, error) {
+func BuildOverviewHook(pages []*core.Page) ([]*core.Page, error) {
 	infos := indexPages(pages)
 	if len(infos) == 0 {
 		return pages, nil
@@ -60,8 +60,9 @@ func BuildGraphHook(pages []*core.Page) ([]*core.Page, error) {
 	overviewPage := &core.Page{
 		RelPath: "_virtual/overview",
 		Envelope: core.Envelope{
-			"title":  "Infrastructure Overview",
-			"layout": "diagram",
+			"title":   "Infrastructure Overview",
+			"layout":  "diagram",
+			"summary": buildSummary(g),
 		},
 		Nodes: []core.Node{{
 			Type: "graph-data",

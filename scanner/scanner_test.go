@@ -110,6 +110,46 @@ func TestRun_SkipsHiddenDirs(t *testing.T) {
 	}
 }
 
+func TestKustomizeLeaves(t *testing.T) {
+	repo := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(repo, rel)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// base/ is an aggregate whose children are pulled into overlays from
+	// outside; overlays/eng pulls in its own api fragment plus shared bases.
+	write("base/kustomization.yaml", "resources:\n  - api\n  - system\n")
+	write("base/api/kustomization.yaml", "resources:\n  - deployment.yaml\n")
+	write("base/system/kustomization.yaml", "resources:\n  - ns.yaml\n")
+	write("overlays/eng/kustomization.yaml", "namespace: eng\nresources:\n  - ../../base/system\n  - api\n")
+	write("overlays/eng/api/kustomization.yaml", "resources:\n  - ../../../base/api\n")
+	// a standalone overlay nobody references
+	write("argocd/kustomization.yaml", "resources:\n  - app.yaml\n")
+
+	dirs := map[string]bool{}
+	for _, d := range []string{"base", "base/api", "base/system", "overlays/eng", "overlays/eng/api", "argocd"} {
+		dirs[filepath.Join(repo, d)] = true
+	}
+
+	got := kustomizeLeaves(dirs)
+	want := map[string]bool{
+		filepath.Join(repo, "overlays/eng"): true,
+		filepath.Join(repo, "argocd"):       true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("leaves = %v, want %v", got, want)
+	}
+	for _, leaf := range got {
+		if !want[leaf] {
+			t.Errorf("unexpected leaf %s (base aggregates and referenced fragments should be excluded)", leaf)
+		}
+	}
+}
+
 func TestRun_NestedPaths(t *testing.T) {
 	repo := t.TempDir()
 	out := t.TempDir()
