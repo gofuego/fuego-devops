@@ -22,9 +22,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
-          path-to-document: 'https://github.com/gofuego/fuego-devops/blob/main/CLA.md'
+          path-to-document: 'https://github.com/gofuego/fuego-devops/blob/develop/CLA.md'
           branch: 'cla-signatures'
           allowlist: 'FabioSol,*[bot]'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
-          custom-notsigned-prcomment: 'Thank you for your contribution. Before we can merge it, please sign our [Contributor License Agreement](https://github.com/gofuego/fuego-devops/blob/main/CLA.md) by posting the comment below on this pull request:'
+          custom-notsigned-prcomment: 'Thank you for your contribution. Before we can merge it, please sign our [Contributor License Agreement](https://github.com/gofuego/fuego-devops/blob/develop/CLA.md) by posting the comment below on this pull request:'
           custom-allsigned-prcomment: 'All contributors have signed the CLA. Thank you!'
