@@ -311,7 +311,7 @@ func emitManifestStream(stream []byte, relDir, outDir string, seen map[string]bo
 		}
 		source := relDir + " (rendered)"
 
-		if err := writeContent(doc, relPath, outDir, "k8s", title, source); err != nil {
+		if err := writeContent(doc, relPath, outDir, "k8s", meta.Kind, title, source); err != nil {
 			fmt.Printf("  warning: %s\n", err)
 			continue
 		}
@@ -346,7 +346,13 @@ func emitFile(srcPath, relPath, outDir, fileType, name string) error {
 		return fmt.Errorf("reading %s: %w", srcPath, err)
 	}
 	title := inferTitle(relPath, name, fileType)
-	if err := writeContent(data, relPath, outDir, fileType, title, relPath); err != nil {
+	// Non-k8s files have no Kubernetes kind; group them by a humanized file type
+	// (e.g. "dockerfile" → "Dockerfile") so /by-kind stays meaningful.
+	kind := fileType
+	if fileType == "dockerfile" {
+		kind = "Dockerfile"
+	}
+	if err := writeContent(data, relPath, outDir, fileType, kind, title, relPath); err != nil {
 		return err
 	}
 	fmt.Printf("  scanned %s\n", relPath)
@@ -356,7 +362,7 @@ func emitFile(srcPath, relPath, outDir, fileType, name string) error {
 // writeContent writes a single content file: frontmatter (title, source_path,
 // resource_kind) followed by the raw resource body. relPath is sanitized into a
 // flat, collision-free filename that preserves the repo path structure.
-func writeContent(data []byte, relPath, outDir, fileType, title, sourcePath string) error {
+func writeContent(data []byte, relPath, outDir, fileType, kind, title, sourcePath string) error {
 	sanitized := strings.ReplaceAll(relPath, string(filepath.Separator), "--")
 
 	var outName string
@@ -373,7 +379,7 @@ func writeContent(data []byte, relPath, outDir, fileType, title, sourcePath stri
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("title: %q\n", title))
 	sb.WriteString(fmt.Sprintf("source_path: %q\n", sourcePath))
-	sb.WriteString(fmt.Sprintf("resource_kind: %q\n", fileType))
+	sb.WriteString(fmt.Sprintf("resource_kind: %q\n", kind))
 	sb.WriteString("---\n")
 	sb.Write(data)
 

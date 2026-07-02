@@ -1,0 +1,10 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main, gh-pages, fuego-pages, fuego-studio-edits]
+
+jobs:
+  ci:
+    uses: gofuego/.github/.github/workflows/go-ci.yml@main
