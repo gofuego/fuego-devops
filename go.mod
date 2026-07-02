@@ -3,7 +3,7 @@ module github.com/gofuego/fuego-devops
 go 1.25.0
 
 require (
-	github.com/gofuego/fuego v0.4.4
+	github.com/gofuego/fuego v0.4.6
 	gopkg.in/yaml.v3 v3.0.1
 )
 
