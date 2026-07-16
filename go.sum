@@ -3,8 +3,14 @@ github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fT
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
-github.com/gofuego/fuego v0.4.7 h1:xbEPpO8yXL+QIC71p7eHHVyvc8BZpr2GrMbBDEQR7O8=
-github.com/gofuego/fuego v0.4.7/go.mod h1:m7SObZKwzDqCnymRYHhm07HWGWjSEOstCeZ/v4I/qF8=
+github.com/gofuego/fuego v0.5.0 h1:NqgnH4J7ey0nY0SGIraT4lTN7oAXjQXUAiBHudcx4F4=
+github.com/gofuego/fuego v0.5.0/go.mod h1:m7SObZKwzDqCnymRYHhm07HWGWjSEOstCeZ/v4I/qF8=
+github.com/gofuego/fuego-formats/docker v0.0.0-20260716041442-4c728e8d13a7 h1:qEwMBgew5W58XXjoQLCiR1+E7ZnsYu/qi6bqkB0thF8=
+github.com/gofuego/fuego-formats/docker v0.0.0-20260716041442-4c728e8d13a7/go.mod h1:e0BMLfDMMjHHYbOC+FBxfVfXo7xnBgwxHU8FprrCF8w=
+github.com/gofuego/fuego-formats/formatkit v0.0.0-20260716041442-4c728e8d13a7 h1:wfR+z63ycgRUPHZD2KlWCL2bo1SOHQa6zN4KU8n36/w=
+github.com/gofuego/fuego-formats/formatkit v0.0.0-20260716041442-4c728e8d13a7/go.mod h1:lFqvQHi93zFXQj7kqSLq0Df6Rwi0OpiOCXKnRQpsDh4=
+github.com/gofuego/fuego-formats/kubernetes v0.0.0-20260716041442-4c728e8d13a7 h1:8AITN9o92hyFfBVdE+0eGFq6o7SD1ivZuIXR/K1Zvb4=
+github.com/gofuego/fuego-formats/kubernetes v0.0.0-20260716041442-4c728e8d13a7/go.mod h1:qX2ERSfc5ZJjHOZIFmPK/LeUyYghRwVrKBGoRfs6QcY=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

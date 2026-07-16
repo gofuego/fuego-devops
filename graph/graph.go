@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gofuego/fuego-formats/docker"
+	"github.com/gofuego/fuego-formats/kubernetes"
 	"github.com/gofuego/fuego/core"
 )
 
@@ -84,7 +86,7 @@ func indexPages(pages []*core.Page) []pageInfo {
 	var infos []pageInfo
 
 	for _, p := range pages {
-		if p.Type != "k8s" && p.Type != "dockerfile" {
+		if p.Type != kubernetes.Type && p.Type != docker.Type {
 			continue
 		}
 
@@ -93,8 +95,8 @@ func indexPages(pages []*core.Page) []pageInfo {
 			nodeTypes: groupNodesByType(p.Nodes),
 		}
 
-		if p.Type == "k8s" {
-			headers := info.nodeTypes["resource-header"]
+		if p.Type == kubernetes.Type {
+			headers := info.nodeTypes[kubernetes.NodeResourceHeader]
 			if len(headers) == 0 {
 				continue
 			}
@@ -193,12 +195,12 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 	}
 
 	for _, info := range infos {
-		if info.page.Type != "k8s" {
+		if info.page.Type != kubernetes.Type {
 			continue
 		}
 
 		// Ingress → Service
-		for _, n := range info.nodeTypes["ingress-rule"] {
+		for _, n := range info.nodeTypes[kubernetes.NodeIngressRule] {
 			svcName, _ := n.Attributes["serviceName"].(string)
 			if svcName == "" {
 				continue
@@ -209,7 +211,7 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 		}
 
 		// Service → Workload (selector matching)
-		for _, n := range info.nodeTypes["service-spec"] {
+		for _, n := range info.nodeTypes[kubernetes.NodeServiceSpec] {
 			selectorMap, ok := n.Attributes["selectorMap"].(map[string]any)
 			if !ok || len(selectorMap) == 0 {
 				continue
@@ -221,7 +223,7 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 				if !isWorkloadKind(other.key.kind) {
 					continue
 				}
-				for _, pl := range other.nodeTypes["pod-template-labels"] {
+				for _, pl := range other.nodeTypes[kubernetes.NodePodTemplateLabels] {
 					if matchesSelector(selectorMap, pl.Attributes) {
 						addEdge(info.id, other.id, "selects", "selects")
 					}
@@ -230,7 +232,7 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 		}
 
 		// Workload → ConfigMap/Secret (env refs)
-		for _, n := range info.nodeTypes["env-ref"] {
+		for _, n := range info.nodeTypes[kubernetes.NodeEnvRef] {
 			refKind, _ := n.Attributes["refKind"].(string)
 			refName, _ := n.Attributes["refName"].(string)
 			if refName == "" {
@@ -242,7 +244,7 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 		}
 
 		// Workload → ConfigMap/Secret/PVC (volumes)
-		for _, n := range info.nodeTypes["volume"] {
+		for _, n := range info.nodeTypes[kubernetes.NodeVolume] {
 			refName, _ := n.Attributes["refName"].(string)
 			volType, _ := n.Attributes["volumeType"].(string)
 			if refName == "" {
@@ -263,7 +265,14 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 		if df.key.kind != "Dockerfile" {
 			continue
 		}
-		images, _ := df.page.Envelope["images"].([]string)
+		// The docker module emits images as []any (cache-eligible envelopes).
+		imageList, _ := df.page.Envelope["images"].([]any)
+		var images []string
+		for _, img := range imageList {
+			if s, ok := img.(string); ok {
+				images = append(images, s)
+			}
+		}
 		if len(images) == 0 {
 			continue
 		}
@@ -271,7 +280,7 @@ func buildGraph(infos []pageInfo, lookup map[string]*pageInfo) Graph {
 			if !isWorkloadKind(wl.key.kind) {
 				continue
 			}
-			for _, cs := range wl.nodeTypes["container-spec"] {
+			for _, cs := range wl.nodeTypes[kubernetes.NodeContainerSpec] {
 				containerImage, _ := cs.Attributes["image"].(string)
 				if containerImage == "" {
 					continue

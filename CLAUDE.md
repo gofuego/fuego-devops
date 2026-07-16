@@ -21,8 +21,8 @@ v0.3's public extension points:
 
 | Fuego extension point | fuego-devops usage |
 |---|---|
-| `core.Parser` | `parser.Kubernetes()` parses `.k8s` manifests |
-| `core.FilenameParser` | `parser.Dockerfile()` parses `Dockerfile` / `.dockerfile` |
+| `core.Parser` | `kubernetes.Parser()` (from fuego-formats) parses `.k8s` manifests |
+| `core.FilenameParser` | `docker.Parser()` (from fuego-formats) parses `Dockerfile` / `.dockerfile` |
 | `core.Pack` (`eng.Use`) | `devops.Pack()` bundles parsers + theme + config + hook |
 | `Pack.Theme fs.FS` | embedded `theme/` (templates + `static/`, vis-network) |
 | `Pack.ConfigDefaults` | `config-defaults.yaml` (routes + `resource_kind` taxonomy) |
@@ -105,13 +105,31 @@ broken overlay in a large repo shouldn't take down the whole site.
 ### AD-3: Parsers extract relationships; the graph hook reads attributes
 
 **Decision:** Parsers emit specialized node types carrying relationship data —
-`pod-template-labels`, `env-ref`, `service-spec.selectorMap`, `volume.refName`,
-`ingress-rule.serviceName`, `container-spec.image`. The graph hook reads these
-node attributes; it never re-parses YAML.
+`k8s-pod-template-labels`, `k8s-env-ref`, `k8s-service-spec.selectorMap`,
+`k8s-volume.refName`, `k8s-ingress-rule.serviceName`,
+`k8s-container-spec.image`. The graph hook reads these node attributes; it
+never re-parses YAML.
 
 **Why:** Parsers have the raw structure and extract relationship fields precisely.
 The hook then pattern-matches on node types/attributes across all pages, keeping
 it free of YAML semantics.
+
+### AD-8: The parsers live in fuego-formats; this repo contains no parser code
+
+**Decision:** The Dockerfile and Kubernetes parsers are the
+`github.com/gofuego/fuego-formats/docker` and `.../kubernetes` modules;
+`devops.Pack()` registers `docker.Parser()` and `kubernetes.Parser()`, and the
+graph hook reads their exported node-type constants. The attribute contract
+the hook depends on is documented in each module's `schema.md` as public API.
+
+**Why:** The parsers are reusable beyond this pack (any Fuego site can
+register them standalone), and fuego-formats is the ecosystem's home for
+independently-versioned format parsers. Node types gained the `docker-`/`k8s-`
+prefixes in the move (renderer templates renamed to match); page types are
+`docker` and `k8s`. The docker module's `*.dockerfile` claim is load-bearing:
+under fuego ADR-018, declared patterns are a parser's complete claim set, so
+the scanner-emitted `<name>.dockerfile` files parse only because the module
+claims that pattern.
 
 ### AD-4: The overview is a virtual page built in an Index hook
 
@@ -174,9 +192,6 @@ fuego-devops/
   cmd/fuego-devops/        CLI binary (flags → devops.Run)
   scanner/
     scanner.go             Repo walk, Kustomize/Helm render, dedup, content emit
-  parser/
-    kubernetes.go          K8s manifest parser — structured nodes per resource kind
-    dockerfile.go          Dockerfile parser (FilenameParser) — stage/instruction nodes
   graph/
     graph.go               BuildOverviewHook (IndexHook) + edge construction
     summary.go             Per-namespace, workload-centric summary (deterministic)
@@ -188,8 +203,10 @@ fuego-devops/
     renderers/             Per-node-type HTML templates
 ```
 
-`scanner`, `parser`, and `graph` depend only on Fuego (`core`, `engine`) and
-`gopkg.in/yaml.v3`. The root `devops` package wires them into the pack and `Run`.
+The parsers live in fuego-formats (`docker`, `kubernetes` modules — see AD-8);
+`scanner` and `graph` depend only on Fuego (`core`, `engine`), the two parser
+modules' exported constants, and `gopkg.in/yaml.v3`. The root `devops` package
+wires them into the pack and `Run`.
 
 ## Build flow
 
@@ -203,19 +220,21 @@ fuego-devops/
 4. `eng.Build`/`eng.Serve(ctx, BuildOptions{ContentDir, OutputDir, SiteName, BaseURL})`.
 5. The temp content dir is removed on return.
 
-Inside Fuego, the pack contributes the two parsers (so `.k8s`/`.dockerfile`/
-`Dockerfile` are discovered as content), the theme, the route/taxonomy defaults,
-and the Index hook that builds the overview.
+Inside Fuego, the pack contributes the two fuego-formats parsers (so
+`.k8s`/`.dockerfile`/`Dockerfile` are discovered as content), the theme, the
+route/taxonomy defaults, and the Index hook that builds the overview.
 
 ## The graph hook
 
-`BuildOverviewHook` constructs edges by reading node attributes:
+`BuildOverviewHook` constructs edges by reading node attributes (via the
+fuego-formats modules' exported constants; the attribute names are those
+modules' documented public API):
 
-- **Ingress → Service** (`routes-to`): `ingress-rule.serviceName`
-- **Service → Workload** (`selects`): `service-spec.selectorMap` matched against `pod-template-labels`
-- **Workload → ConfigMap/Secret** (`env-from`): `env-ref.refKind` + `env-ref.refName`
-- **Workload → ConfigMap/Secret/PVC** (`mounts`): `volume.refName` + `volume.volumeType`
-- **Dockerfile → Workload** (`builds`): Dockerfile base image matches `container-spec.image` (tags stripped)
+- **Ingress → Service** (`routes-to`): `k8s-ingress-rule.serviceName`
+- **Service → Workload** (`selects`): `k8s-service-spec.selectorMap` matched against `k8s-pod-template-labels`
+- **Workload → ConfigMap/Secret** (`env-from`): `k8s-env-ref.refKind` + `k8s-env-ref.refName`
+- **Workload → ConfigMap/Secret/PVC** (`mounts`): `k8s-volume.refName` + `k8s-volume.volumeType`
+- **Dockerfile → Workload** (`builds`): Dockerfile base image (envelope `images`, `[]any`) matches `k8s-container-spec.image` (tags stripped)
 
 `summary.go` turns the graph into a per-namespace, workload-centric view: each
 workload lists what **exposes** it (services + fronting ingresses), what it
@@ -226,40 +245,49 @@ covered by `graph/summary_test.go`.
 
 ## Node Type Reference
 
-### Kubernetes nodes
+The authoritative contracts live in the fuego-formats modules'
+[`kubernetes/schema.md`](https://github.com/gofuego/fuego-formats/blob/develop/kubernetes/schema.md)
+and [`docker/schema.md`](https://github.com/gofuego/fuego-formats/blob/develop/docker/schema.md);
+this table maps them to their graph usage here. Renderer templates in
+`theme/renderers/` are named after these types.
+
+### Kubernetes nodes (`kubernetes.Node*` constants)
 
 | Node type | Emitted by | Key attributes | Used by graph |
 |-----------|-----------|----------------|---------------|
-| `resource-header` | All kinds | `kind`, `apiVersion`, `name`, `namespace` | Yes — graph node ID |
-| `metadata` | All kinds | label/annotation key-value pairs | No |
-| `replicas` | Workloads | `count` | No |
-| `pod-template-labels` | Workloads | label key-value pairs | Yes — Service selector matching |
-| `container-spec` | Workloads | `name`, `image`, `ports`, `limits`, `requests`, `volumeMounts` | Yes — Dockerfile image matching |
-| `env-ref` | Workloads | `refKind`, `refName`, `container` | Yes — ConfigMap/Secret edges |
-| `volume` | Workloads | `name`, `volumeType`, `refName` | Yes — volume mount edges |
-| `service-spec` | Service | `serviceType`, `selector`, `selectorMap` | Yes — workload selection |
-| `port-mapping` | Service | `port`, `targetPort`, `protocol` | No |
-| `config-data` | ConfigMap | `key` (content is value) | No |
-| `secret-data` | Secret | `keys` array (values redacted) | No |
-| `ingress-rule` | Ingress | `host`, `path`, `pathType`, `serviceName`, `servicePort` | Yes — Service edges |
-| `spec` | Unknown kinds | content is YAML | No |
+| `k8s-resource-header` | All kinds | `kind`, `apiVersion`, `name`, `namespace` | Yes — graph node ID |
+| `k8s-metadata` | All kinds | label/annotation key-value pairs | No |
+| `k8s-replicas` | Workloads | `count` | No |
+| `k8s-pod-template-labels` | Workloads | label key-value pairs | Yes — Service selector matching |
+| `k8s-container-spec` | Workloads | `name`, `image`, `ports`, `limits`, `requests`, `volumeMounts` | Yes — Dockerfile image matching |
+| `k8s-env-ref` | Workloads | `refKind`, `refName`, `container` | Yes — ConfigMap/Secret edges |
+| `k8s-service-account-ref` | Workloads | `name` | No |
+| `k8s-volume` | Workloads | `name`, `volumeType`, `refName` | Yes — volume mount edges |
+| `k8s-service-spec` | Service | `serviceType`, `selector`, `selectorMap` | Yes — workload selection |
+| `k8s-port-mapping` | Service | `port`, `targetPort`, `protocol` | No |
+| `k8s-config-data` | ConfigMap | `key` (content is value) | No |
+| `k8s-secret-data` | Secret | `keys` array (values redacted) | No |
+| `k8s-ingress-rule` | Ingress | `host`, `path`, `pathType`, `serviceName`, `servicePort` | Yes — Service edges |
+| `k8s-spec` | Unknown kinds | content is YAML | No |
 
-### Dockerfile nodes
+### Dockerfile nodes (`docker.Node*` constants)
 
 | Node type | Key attributes | Used by graph |
 |-----------|----------------|---------------|
-| `stage` | `image`, `alias` | No (images go in the envelope) |
-| `instruction` | `instruction`, `stage`, `copyFrom` | No |
-| `comment` | (content is text) | No |
+| `docker-stage` | `image`, `alias` | No (images go in the envelope, as `[]any`) |
+| `docker-instruction` | `instruction`, `stage`, `copyFrom` | No |
+| `docker-comment` | (content is text) | No |
 
 ## Common Tasks
 
 ### Add support for a new K8s kind
-1. Add a case in the parser in `parser/kubernetes.go`.
-2. Emit nodes whose types match existing renderers (or add renderers).
+1. Add the kind in the fuego-formats `kubernetes` module (its schema.md is a
+   contract — new node types are a release of that module), then bump this
+   repo's dependency.
+2. Emit nodes whose types match existing renderers (or add renderers here).
 3. If the kind carries relationships (selectors, refs), emit nodes the graph hook can read.
 4. Add edge logic in `buildGraph()` (and `summary.go`) if it participates in relationships.
-5. Add a `theme/renderers/{type}.html` for any new node types and update `parser/kubernetes_test.go`.
+5. Add a `theme/renderers/{type}.html` for any new node types.
 
 ### Add a new edge type to the graph
 1. Ensure the parser emits a node carrying the relationship in its attributes.
@@ -282,7 +310,8 @@ A consumer can override any file by placing their own `theme/...` over the pack'
 
 ## Testing
 
-- `go test ./...` — unit tests for the scanner, parsers, and graph/summary.
+- `go test ./...` — unit tests for the scanner and graph/summary. (Parser
+  tests live with the parsers, in the fuego-formats modules.)
 - `scanner/scanner_test.go` covers detection, path flattening, and
   `TestKustomizeLeaves` (the base-vs-overlay distinction).
 - `graph/summary_test.go` locks in the deterministic per-namespace summary.
@@ -295,7 +324,9 @@ A consumer can override any file by placing their own `theme/...` over the pack'
 | Package | Purpose |
 |---------|---------|
 | `github.com/gofuego/fuego` | Meta-engine SSG — pipeline, routing, rendering, serving, pack API |
-| `gopkg.in/yaml.v3` | YAML parsing (manifests, kustomization files, render-stream splitting) |
+| `github.com/gofuego/fuego-formats/docker` | Dockerfile parser + `docker-*` node constants |
+| `github.com/gofuego/fuego-formats/kubernetes` | K8s manifest parser + `k8s-*` node constants |
+| `gopkg.in/yaml.v3` | YAML parsing (kustomization files, render-stream splitting in the scanner) |
 | `kustomize` (binary, external) | Renders Kustomize overlays before scanning |
 | `helm` (binary, external) | Renders Helm charts before scanning |
 
@@ -303,9 +334,12 @@ All other dependencies (cobra, doublestar, fsnotify, …) are transitive through
 
 ## Dependency note
 
-`go.mod` pins a tagged Fuego release. While consuming an unreleased engine
-feature you may add a `replace` pointing at a local Fuego checkout — pin a tag and
-remove the replace before publishing.
+`go.mod` pins a tagged Fuego release. While consuming an unreleased engine or
+fuego-formats feature, pin a develop **pseudo-version** (resolvable in CI,
+unlike a local-path replace) — currently the docker/kubernetes modules and the
+formatkit replace-to-pseudo-version, until `docker/v0.1.0`,
+`kubernetes/v0.1.0`, and `formatkit/v0.2.0` are tagged; then pin the tags and
+drop the replace.
 
 ## What NOT to Do
 

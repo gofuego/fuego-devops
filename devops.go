@@ -13,8 +13,9 @@ import (
 	"os"
 
 	"github.com/gofuego/fuego-devops/graph"
-	"github.com/gofuego/fuego-devops/parser"
 	"github.com/gofuego/fuego-devops/scanner"
+	"github.com/gofuego/fuego-formats/docker"
+	"github.com/gofuego/fuego-formats/kubernetes"
 	"github.com/gofuego/fuego/core"
 	"github.com/gofuego/fuego/engine"
 )
@@ -26,14 +27,15 @@ var themeFS embed.FS
 var configDefaults []byte
 
 // Pack returns the fuego-devops format pack: the Dockerfile and Kubernetes
-// parsers, the infrastructure theme, the resource routes + kind taxonomy as
-// config defaults, and the Index hook that builds the architecture graph and
+// parsers (imported from fuego-formats — this repo contains no parser code),
+// the infrastructure theme, the resource routes + kind taxonomy as config
+// defaults, and the Index hook that builds the architecture graph and
 // per-namespace summary as a virtual overview page.
 func Pack() core.Pack {
 	theme, _ := fs.Sub(themeFS, "theme")
 	return core.Pack{
 		Name:           "devops",
-		Parsers:        []core.Parser{parser.Dockerfile(), parser.Kubernetes()},
+		Parsers:        []core.Parser{docker.Parser(), kubernetes.Parser()},
 		Theme:          theme,
 		ConfigDefaults: configDefaults,
 		Hooks: core.Hooks{
