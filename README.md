@@ -139,8 +139,10 @@ output.
 
 The CLI is a thin wrapper that scans a repo and then drives `devops.Pack()`. If
 you already have content (or want infrastructure docs as one section of a larger
-Fuego site), use the pack directly — it brings its own parsers, theme, routes,
-taxonomy, and the overview hook:
+Fuego site), use the pack directly — it brings its parsers (the
+[fuego-formats](https://github.com/gofuego/fuego-formats) `docker` and
+`kubernetes` modules, also usable standalone), theme, routes, taxonomy, and the
+overview hook:
 
 ```go
 package main

@@ -18,12 +18,12 @@ func makePage(typ, url string, envelope core.Envelope, nodes []core.Node) *core.
 func TestBuildGraphHook_IngressToService(t *testing.T) {
 	pages := []*core.Page{
 		makePage("k8s", "/kubernetes/ingress/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Ingress", "name": "web-ingress", "namespace": "prod"}},
-			{Type: "ingress-rule", Attributes: map[string]any{"serviceName": "api-svc", "host": "example.com"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Ingress", "name": "web-ingress", "namespace": "prod"}},
+			{Type: "k8s-ingress-rule", Attributes: map[string]any{"serviceName": "api-svc", "host": "example.com"}},
 		}),
 		makePage("k8s", "/kubernetes/svc/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Service", "name": "api-svc", "namespace": "prod"}},
-			{Type: "service-spec", Attributes: map[string]any{"serviceType": "ClusterIP"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Service", "name": "api-svc", "namespace": "prod"}},
+			{Type: "k8s-service-spec", Attributes: map[string]any{"serviceType": "ClusterIP"}},
 		}),
 	}
 
@@ -66,15 +66,15 @@ func TestBuildGraphHook_IngressToService(t *testing.T) {
 func TestBuildGraphHook_ServiceToDeployment(t *testing.T) {
 	pages := []*core.Page{
 		makePage("k8s", "/kubernetes/svc/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Service", "name": "api-svc", "namespace": "prod"}},
-			{Type: "service-spec", Attributes: map[string]any{
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Service", "name": "api-svc", "namespace": "prod"}},
+			{Type: "k8s-service-spec", Attributes: map[string]any{
 				"serviceType": "ClusterIP",
 				"selectorMap": map[string]any{"app": "api"},
 			}},
 		}),
 		makePage("k8s", "/kubernetes/deploy/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
-			{Type: "pod-template-labels", Attributes: map[string]any{"app": "api", "tier": "backend"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
+			{Type: "k8s-pod-template-labels", Attributes: map[string]any{"app": "api", "tier": "backend"}},
 		}),
 	}
 
@@ -100,15 +100,15 @@ func TestBuildGraphHook_ServiceToDeployment(t *testing.T) {
 func TestBuildGraphHook_EnvRef(t *testing.T) {
 	pages := []*core.Page{
 		makePage("k8s", "/kubernetes/deploy/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
-			{Type: "env-ref", Attributes: map[string]any{"refKind": "ConfigMap", "refName": "app-config", "container": "api"}},
-			{Type: "env-ref", Attributes: map[string]any{"refKind": "Secret", "refName": "db-creds", "container": "api"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
+			{Type: "k8s-env-ref", Attributes: map[string]any{"refKind": "ConfigMap", "refName": "app-config", "container": "api"}},
+			{Type: "k8s-env-ref", Attributes: map[string]any{"refKind": "Secret", "refName": "db-creds", "container": "api"}},
 		}),
 		makePage("k8s", "/kubernetes/cm/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "ConfigMap", "name": "app-config", "namespace": "prod"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "ConfigMap", "name": "app-config", "namespace": "prod"}},
 		}),
 		makePage("k8s", "/kubernetes/secret/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Secret", "name": "db-creds", "namespace": "prod"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Secret", "name": "db-creds", "namespace": "prod"}},
 		}),
 	}
 
@@ -134,11 +134,11 @@ func TestBuildGraphHook_EnvRef(t *testing.T) {
 func TestBuildGraphHook_VolumeRef(t *testing.T) {
 	pages := []*core.Page{
 		makePage("k8s", "/kubernetes/deploy/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
-			{Type: "volume", Attributes: map[string]any{"name": "config-vol", "volumeType": "configMap", "refName": "app-config"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
+			{Type: "k8s-volume", Attributes: map[string]any{"name": "config-vol", "volumeType": "configMap", "refName": "app-config"}},
 		}),
 		makePage("k8s", "/kubernetes/cm/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "ConfigMap", "name": "app-config", "namespace": "prod"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "ConfigMap", "name": "app-config", "namespace": "prod"}},
 		}),
 	}
 
@@ -179,15 +179,15 @@ func TestBuildGraphHook_NoK8sPages(t *testing.T) {
 
 func TestBuildGraphHook_DockerfileImageMatch(t *testing.T) {
 	pages := []*core.Page{
-		makePage("dockerfile", "/dockerfiles/api/", core.Envelope{
-			"images":      []string{"myapp"},
+		makePage("docker", "/dockerfiles/api/", core.Envelope{
+			"images":      []any{"myapp"},
 			"source_path": "services/api/Dockerfile",
 		}, []core.Node{
 			{Type: "stage", Attributes: map[string]any{"image": "myapp", "alias": ""}},
 		}),
 		makePage("k8s", "/kubernetes/deploy/", nil, []core.Node{
-			{Type: "resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
-			{Type: "container-spec", Attributes: map[string]any{"image": "myapp:v1.2", "name": "api"}},
+			{Type: "k8s-resource-header", Attributes: map[string]any{"kind": "Deployment", "name": "api", "namespace": "prod"}},
+			{Type: "k8s-container-spec", Attributes: map[string]any{"image": "myapp:v1.2", "name": "api"}},
 		}),
 	}
 

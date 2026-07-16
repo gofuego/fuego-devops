@@ -1,7 +1,7 @@
 # Config defaults contributed by the devops pack. The site config (or the
 # fuego-devops CLI options) is deep-merged on top.
 routes:
-  dockerfile: "/dockerfiles/{slug}"
+  docker: "/dockerfiles/{slug}"
   k8s: "/kubernetes/{slug}"
 
 taxonomies:
