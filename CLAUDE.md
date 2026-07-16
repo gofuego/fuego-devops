@@ -17,7 +17,7 @@ and the CLI wire the two together.
 ## How it uses Fuego
 
 fuego-devops does **not** fork or modify Fuego. Everything works through Fuego
-v0.3's public extension points:
+public extension points:
 
 | Fuego extension point | fuego-devops usage |
 |---|---|
@@ -298,7 +298,7 @@ this table maps them to their graph usage here. Renderer templates in
 ### Teach the scanner a new source format (e.g. Terraform, Jsonnet)
 1. Detect it in `scanner/scanner.go` — either a new templating tree (render then scan, like Kustomize/Helm) or a raw file type.
 2. Emit content with the right extension and `resource_kind` frontmatter.
-3. Add a parser in `parser/`, register it in `devops.Pack()`, and add a route in `config-defaults.yaml`.
+3. Add a parser module in fuego-formats (with its schema.md contract), register it in `devops.Pack()`, and add a route in `config-defaults.yaml`.
 
 ### Change resource routing or add a taxonomy
 Edit `config-defaults.yaml`. The site config / CLI options still win via deep-merge.
